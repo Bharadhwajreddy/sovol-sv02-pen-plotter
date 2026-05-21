@@ -916,7 +916,7 @@ function scaleStrokes(strokes: Stroke[], imgW: number, imgH: number, s: PlotterS
 }
 
 // ─── SVG with absolute mm coordinates (for Composer G-code generation) ────────
-function buildStrokesSvg(scaledStrokes: Stroke[]): string {
+function buildStrokesSvg(scaledStrokes: Stroke[], s: PlotterSettings): string {
   const paths: string[] = [];
   for (const stroke of scaledStrokes) {
     if (stroke.length < 2) continue;
@@ -926,7 +926,7 @@ function buildStrokesSvg(scaledStrokes: Stroke[]): string {
     }
     paths.push(`<path d="${d}" stroke="black" fill="none" stroke-width="0.3"/>`);
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg">${paths.join("")}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${s.offset_x} ${s.offset_y} ${s.canvas_x} ${s.canvas_y}" width="100%" height="100%">${paths.join("")}</svg>`;
 }
 
 // ─── G-code with Z-hop on every travel ───────────────────────────────────────
@@ -1340,7 +1340,7 @@ export async function POST(request: NextRequest) {
     const { gcode, totalLen } = buildGcode(scaledStrokes, s);
     const sketchDataUrl = buildSvg(sortedStrokes, imgW, imgH, darknessMap);
     const darknessMapUrl = buildDarknessMapSvg(darknessMap, imgW, imgH);
-    const strokesSvg = buildStrokesSvg(scaledStrokes);
+    const strokesSvg = buildStrokesSvg(scaledStrokes, s);
 
     const drawTimeSec = Math.round(
       (totalLen / s.feed_draw + scaledStrokes.length * 30 / s.feed_travel) * 60

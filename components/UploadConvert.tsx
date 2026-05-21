@@ -238,7 +238,7 @@ async function clientSideAutoTrace(f: File, canvasX: number, canvasY: number): P
     paths.push(`<path d="${parts.join(" ")}" stroke="black" fill="none" stroke-width="0.3"/>`);
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasX} ${canvasY}" width="${canvasX}mm" height="${canvasY}mm">${paths.join("")}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasX} ${canvasY}" width="100%" height="100%">${paths.join("")}</svg>`;
 }
 
 function formatTime(s: number) {
