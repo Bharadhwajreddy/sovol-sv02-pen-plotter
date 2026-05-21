@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="upGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- 3D box base -->
+  <path d="M12 40 L32 52 L52 40 L32 28 Z" fill="url(#upGrad)" opacity="0.2" stroke="url(#upGrad)" stroke-width="1"/>
+  <path d="M12 40 L12 48 L32 60 L32 52 Z" fill="url(#upGrad)" opacity="0.4"/>
+  <path d="M52 40 L52 48 L32 60 L32 52 Z" fill="url(#upGrad)" opacity="0.3"/>
+  <!-- Arrow up -->
+  <path d="M32 8 L22 20 L28 20 L28 34 L36 34 L36 20 L42 20 Z" fill="url(#upGrad)" opacity="0.9"/>
+  <circle cx="32" cy="8" r="3" fill="white" opacity="0.8"/>
+</svg>

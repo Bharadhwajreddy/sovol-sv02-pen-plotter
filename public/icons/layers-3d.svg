@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="layerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- Bottom layer -->
+  <path d="M8 44 L32 56 L56 44 L32 32 Z" fill="url(#layerGrad)" opacity="0.2" stroke="url(#layerGrad)" stroke-width="1"/>
+  <!-- Middle layer -->
+  <path d="M8 34 L32 46 L56 34 L32 22 Z" fill="url(#layerGrad)" opacity="0.4" stroke="url(#layerGrad)" stroke-width="1"/>
+  <!-- Top layer -->
+  <path d="M8 24 L32 36 L56 24 L32 12 Z" fill="url(#layerGrad)" opacity="0.7" stroke="url(#layerGrad)" stroke-width="1.5"/>
+  <circle cx="32" cy="24" r="3" fill="white" opacity="0.8"/>
+</svg>

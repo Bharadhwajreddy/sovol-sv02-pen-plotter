@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="checkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+  <!-- 3D circle -->
+  <circle cx="32" cy="32" r="24" fill="url(#checkGrad)" opacity="0.1" stroke="url(#checkGrad)" stroke-width="2"/>
+  <path d="M32 8 A24 24 0 0 1 56 32" stroke="url(#checkGrad)" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.4"/>
+  <!-- Check mark -->
+  <path d="M18 32 L27 42 L46 22" stroke="url(#checkGrad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Glow dots -->
+  <circle cx="56" cy="32" r="3" fill="url(#checkGrad)" opacity="0.7"/>
+  <circle cx="32" cy="8" r="2" fill="url(#checkGrad)" opacity="0.5"/>
+</svg>

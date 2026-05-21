@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="frameGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+  <!-- Frame -->
+  <rect x="10" y="8" width="44" height="48" rx="3" stroke="url(#frameGrad)" stroke-width="2" fill="none"/>
+  <rect x="14" y="12" width="36" height="40" rx="2" fill="url(#frameGrad)" opacity="0.05"/>
+  <!-- Face sketch lines -->
+  <ellipse cx="32" cy="26" rx="10" ry="12" stroke="url(#frameGrad)" stroke-width="1.5" fill="none" opacity="0.7"/>
+  <path d="M26 24 Q28 22 30 24" stroke="url(#frameGrad)" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <path d="M34 24 Q36 22 38 24" stroke="url(#frameGrad)" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <path d="M29 30 Q32 33 35 30" stroke="url(#frameGrad)" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <!-- Hair lines -->
+  <path d="M22 20 Q24 14 32 13 Q40 14 42 20" stroke="url(#frameGrad)" stroke-width="1.5" fill="none" opacity="0.6"/>
+  <!-- Body -->
+  <path d="M22 38 Q20 44 18 50 L46 50 Q44 44 42 38" stroke="url(#frameGrad)" stroke-width="1.5" fill="none" opacity="0.5"/>
+  <!-- Corner decorations -->
+  <rect x="10" y="8" width="6" height="6" rx="1" fill="url(#frameGrad)" opacity="0.6"/>
+  <rect x="48" y="8" width="6" height="6" rx="1" fill="url(#frameGrad)" opacity="0.6"/>
+  <rect x="10" y="50" width="6" height="6" rx="1" fill="url(#frameGrad)" opacity="0.6"/>
+  <rect x="48" y="50" width="6" height="6" rx="1" fill="url(#frameGrad)" opacity="0.6"/>
+</svg>

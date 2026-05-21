@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+    <filter id="glow2"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <!-- Rail -->
+  <rect x="8" y="12" width="48" height="6" rx="3" fill="url(#g2)" opacity="0.2"/>
+  <rect x="8" y="12" width="48" height="6" rx="3" stroke="url(#g2)" stroke-width="1.5" fill="none"/>
+  <!-- Carriage -->
+  <rect x="26" y="8" width="12" height="14" rx="3" fill="url(#g2)" opacity="0.3" filter="url(#glow2)"/>
+  <rect x="26" y="8" width="12" height="14" rx="3" stroke="url(#g2)" stroke-width="1.5" fill="none"/>
+  <!-- Arm -->
+  <line x1="32" y1="22" x2="32" y2="44" stroke="url(#g2)" stroke-width="2" stroke-linecap="round"/>
+  <!-- Pen tip -->
+  <path d="M28 44 L32 52 L36 44 Z" fill="url(#g2)" filter="url(#glow2)"/>
+  <!-- Paper -->
+  <rect x="10" y="46" width="44" height="10" rx="2" fill="url(#g2)" opacity="0.1" stroke="url(#g2)" stroke-width="1"/>
+  <!-- Drawing line on paper -->
+  <path d="M14 51 Q24 49 32 51 Q40 53 50 51" stroke="#10b981" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.8"/>
+</svg>

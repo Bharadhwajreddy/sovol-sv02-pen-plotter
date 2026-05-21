@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="paperGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+  <!-- Paper 3D -->
+  <path d="M8 16 L56 16 L56 48 L8 48 Z" fill="url(#paperGrad)" opacity="0.1" stroke="url(#paperGrad)" stroke-width="1.5"/>
+  <path d="M56 16 L60 20 L60 52 L56 48 Z" fill="url(#paperGrad)" opacity="0.3"/>
+  <path d="M8 48 L12 52 L60 52 L56 48 Z" fill="url(#paperGrad)" opacity="0.2"/>
+  <!-- Sketch lines on paper -->
+  <line x1="16" y1="24" x2="48" y2="24" stroke="url(#paperGrad)" stroke-width="1" opacity="0.6"/>
+  <line x1="16" y1="30" x2="40" y2="30" stroke="url(#paperGrad)" stroke-width="1" opacity="0.5"/>
+  <line x1="16" y1="36" x2="44" y2="36" stroke="url(#paperGrad)" stroke-width="1" opacity="0.4"/>
+  <line x1="16" y1="42" x2="36" y2="42" stroke="url(#paperGrad)" stroke-width="1" opacity="0.3"/>
+  <!-- Rotation arrow -->
+  <path d="M50 10 Q56 6 58 12" stroke="url(#paperGrad)" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M56 6 L58 12 L52 11" stroke="url(#paperGrad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

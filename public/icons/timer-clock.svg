@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="clockGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="34" r="22" stroke="url(#clockGrad)" stroke-width="2" fill="none" opacity="0.3"/>
+  <circle cx="32" cy="34" r="18" stroke="url(#clockGrad)" stroke-width="1.5" fill="url(#clockGrad)" fill-opacity="0.05"/>
+  <!-- Clock hands -->
+  <line x1="32" y1="34" x2="32" y2="20" stroke="url(#clockGrad)" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="32" y1="34" x2="42" y2="40" stroke="url(#clockGrad)" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="32" cy="34" r="2.5" fill="url(#clockGrad)"/>
+  <!-- Top stem -->
+  <rect x="28" y="8" width="8" height="4" rx="2" fill="url(#clockGrad)" opacity="0.7"/>
+  <!-- Tick marks -->
+  <line x1="32" y1="16" x2="32" y2="19" stroke="url(#clockGrad)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="32" y1="49" x2="32" y2="52" stroke="url(#clockGrad)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="14" y1="34" x2="17" y2="34" stroke="url(#clockGrad)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="47" y1="34" x2="50" y2="34" stroke="url(#clockGrad)" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

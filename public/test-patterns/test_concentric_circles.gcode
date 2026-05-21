@@ -1,0 +1,61 @@
+; Sovol SV02 Pen Plotter — Concentric Circles
+; Canvas: 200x160mm  Offset: X40 Y40
+; Canvas center: X140 Y120
+;
+G21 ; mm units
+G90 ; absolute positioning
+G28 X Y ; home X and Y ONLY — never home Z
+G0 Z3.000 F3000 ; pen up
+
+; r=10
+G0 X150.000 Y120.000 F3000
+G0 Z0.000 F3000 ; pen down
+G2 X150.000 Y120.000 I-10.000 J0.000 F1500 ; r=10mm
+G0 Z3.000 F3000 ; pen up
+
+; r=20
+G0 X160.000 Y120.000 F3000
+G0 Z0.000 F3000 ; pen down
+G2 X160.000 Y120.000 I-20.000 J0.000 F1500 ; r=20mm
+G0 Z3.000 F3000 ; pen up
+
+; r=30
+G0 X170.000 Y120.000 F3000
+G0 Z0.000 F3000 ; pen down
+G2 X170.000 Y120.000 I-30.000 J0.000 F1500 ; r=30mm
+G0 Z3.000 F3000 ; pen up
+
+; r=40
+G0 X180.000 Y120.000 F3000
+G0 Z0.000 F3000 ; pen down
+G2 X180.000 Y120.000 I-40.000 J0.000 F1500 ; r=40mm
+G0 Z3.000 F3000 ; pen up
+
+; r=50
+G0 X190.000 Y120.000 F3000
+G0 Z0.000 F3000 ; pen down
+G2 X190.000 Y120.000 I-50.000 J0.000 F1500 ; r=50mm
+G0 Z3.000 F3000 ; pen up
+
+; r=60
+G0 X200.000 Y120.000 F3000
+G0 Z0.000 F3000 ; pen down
+G2 X200.000 Y120.000 I-60.000 J0.000 F1500 ; r=60mm
+G0 Z3.000 F3000 ; pen up
+
+; r=70
+G0 X210.000 Y120.000 F3000
+G0 Z0.000 F3000 ; pen down
+G2 X210.000 Y120.000 I-70.000 J0.000 F1500 ; r=70mm
+G0 Z3.000 F3000 ; pen up
+
+; r=75
+G0 X215.000 Y120.000 F3000
+G0 Z0.000 F3000 ; pen down
+G2 X215.000 Y120.000 I-75.000 J0.000 F1500 ; r=75mm
+G0 Z3.000 F3000 ; pen up
+
+; === FOOTER ===
+G0 Z8.000 F3000 ; raise pen safely
+G0 X40.000 Y40.000 F3000 ; return to origin
+M84 ; disable steppers

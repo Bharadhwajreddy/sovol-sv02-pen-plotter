@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="g3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <filter id="glow3"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <!-- Cloud base -->
+  <path d="M44 36 C48 36 52 32 52 28 C52 24 48 20 44 20 C43 16 39 12 34 12 C28 12 24 16 24 20 C20 20 16 24 16 28 C16 32 20 36 24 36 Z" fill="url(#g3)" opacity="0.15"/>
+  <path d="M44 36 C48 36 52 32 52 28 C52 24 48 20 44 20 C43 16 39 12 34 12 C28 12 24 16 24 20 C20 20 16 24 16 28 C16 32 20 36 24 36 Z" stroke="url(#g3)" stroke-width="1.5" fill="none"/>
+  <!-- Arrow up -->
+  <path d="M32 52 L32 36" stroke="url(#g3)" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M26 42 L32 36 L38 42" stroke="url(#g3)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow3)"/>
+  <!-- Glow dot -->
+  <circle cx="32" cy="36" r="3" fill="url(#g3)" opacity="0.6" filter="url(#glow3)"/>
+</svg>
