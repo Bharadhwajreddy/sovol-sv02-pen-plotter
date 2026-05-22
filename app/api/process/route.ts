@@ -926,7 +926,10 @@ function buildStrokesSvg(scaledStrokes: Stroke[], s: PlotterSettings): string {
     }
     paths.push(`<path d="${d}" stroke="black" fill="none" stroke-width="0.3"/>`);
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${s.offset_x} ${s.offset_y} ${s.canvas_x} ${s.canvas_y}" width="100%" height="100%">${paths.join("")}</svg>`;
+  // Negative canvas_y flips the SVG Y-axis so the image displays right-side up
+  // in the Composer preview (SVG Y-down vs plotter Y-up).
+  // Path coordinates remain in plotter mm space — G-code reads them unchanged.
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${s.offset_x} ${s.offset_y + s.canvas_y} ${s.canvas_x} ${-s.canvas_y}" width="100%" height="100%">${paths.join("")}</svg>`;
 }
 
 // ─── G-code with Z-hop on every travel ───────────────────────────────────────
@@ -1282,9 +1285,10 @@ export async function POST(request: NextRequest) {
     const epsilon = Math.max(0.15, (epsilonBase - detailLevel * epsilonStep) * epsilonMultiplier);
 
     const rawStrokes = traceStrokes(skeleton, imgW, imgH, minLen);
-    const baseStrokes = rawStrokes
-      .map(s => simplify(s, epsilon))
-      .filter(s => s.length >= 2);
+    const baseStrokes = bridgeStrokeGaps(
+      rawStrokes.map(s => simplify(s, epsilon)).filter(s => s.length >= 2),
+      lineArt ? 2 : 3  // smaller gap for clean line art to avoid connecting unrelated lines
+    );
 
     // ── Apply drawing mode ─────────────────────────────────────────────────
     let finalStrokes: Stroke[] = [];
