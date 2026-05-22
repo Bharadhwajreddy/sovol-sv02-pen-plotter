@@ -818,7 +818,7 @@ function generateHatching(
 // ─── Sort strokes by nearest-neighbour to minimize pen travel ────────────────
 // Uses a spatial grid for O(n log n) performance instead of O(n²).
 // Caps at MAX_STROKES to prevent timeout on very complex images.
-const MAX_STROKES = 3000;
+const MAX_STROKES = 6000;
 function sortStrokesByTravel(strokes: Stroke[]): Stroke[] {
   if (strokes.length <= 1) return strokes;
   // Cap stroke count — keep longest strokes (most important features)
@@ -926,10 +926,11 @@ function buildStrokesSvg(scaledStrokes: Stroke[], s: PlotterSettings): string {
     }
     paths.push(`<path d="${d}" stroke="black" fill="none" stroke-width="0.3"/>`);
   }
-  // Negative canvas_y flips the SVG Y-axis so the image displays right-side up
-  // in the Composer preview (SVG Y-down vs plotter Y-up).
-  // Path coordinates remain in plotter mm space — G-code reads them unchanged.
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${s.offset_x} ${s.offset_y + s.canvas_y} ${s.canvas_x} ${-s.canvas_y}" width="100%" height="100%">${paths.join("")}</svg>`;
+  // Y-flip: plotter Y-up → SVG Y-down without touching path coordinates.
+  // scale(1,-1) reflect + translate maps plotter top (offset_y+canvas_y) → SVG top (min viewBox Y).
+  // Path d-attributes stay in plotter mm space so G-code reads them unchanged.
+  const flipY = `scale(1,-1) translate(0,${-(2 * s.offset_y + s.canvas_y)})`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${s.offset_x} ${s.offset_y} ${s.canvas_x} ${s.canvas_y}" width="100%" height="100%"><g transform="${flipY}">${paths.join("")}</g></svg>`;
 }
 
 // ─── G-code with Z-hop on every travel ───────────────────────────────────────
@@ -1109,14 +1110,15 @@ export async function POST(request: NextRequest) {
     // Both modes use skeletonization — it's the correct approach for pen plotting.
     // 0.6mm: higher resolution + much lower epsilon = more faithful curves
     // 2mm: standard resolution + moderate epsilon = clean bold strokes
-    const maxDim = is06mm ? 1000 : 900;  // Keep resolution manageable to avoid timeout
+    const maxDim = is06mm ? 1400 : 1200;  // High res for ball pen — 6px/mm at 1200px on 200mm canvas
 
     // Epsilon for Douglas-Peucker simplification
     // 0.6mm: very low (0.3px base) — preserves fine curves, hair strands, details
     // 2mm: moderate (0.6px base) — clean bold lines
-    const epsilonBase = is06mm ? 0.3 : 0.6;
-    const epsilonStep = is06mm ? 0.02 : 0.05;
-    const mergeThreshold = is06mm ? 1.5 : 2.5;
+    // Ball pen draws ~0.3mm lines — keep epsilon tight so curves are faithful
+    const epsilonBase = is06mm ? 0.2 : 0.3;
+    const epsilonStep = is06mm ? 0.01 : 0.015;
+    const mergeThreshold = is06mm ? 1.2 : 1.5;
 
     // ── Canvas dimensions based on orientation ─────────────────────────────
     // Portrait:  200mm wide × 160mm tall  (default, nozzle safe zone)
@@ -1287,7 +1289,7 @@ export async function POST(request: NextRequest) {
     const rawStrokes = traceStrokes(skeleton, imgW, imgH, minLen);
     const baseStrokes = bridgeStrokeGaps(
       rawStrokes.map(s => simplify(s, epsilon)).filter(s => s.length >= 2),
-      lineArt ? 2 : 3  // smaller gap for clean line art to avoid connecting unrelated lines
+      lineArt ? 1 : 2  // 1px for line art: bridge skeleton micro-gaps only, no cross-feature merging
     );
 
     // ── Apply drawing mode ─────────────────────────────────────────────────

@@ -137,8 +137,9 @@ async function processSvgFileDirect(
     document.body.removeChild(live);
   }
 
-  // Negative canvas_y flips display Y so image appears right-side up in Composer
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${offsetX} ${offsetY + canvasY} ${canvasX} ${-canvasY}" width="100%" height="100%">${outPaths.join("")}</svg>`;
+  // Y-flip via <g transform> — same convention as buildStrokesSvg on the server.
+  const flipY = `scale(1,-1) translate(0,${-(2 * offsetY + canvasY)})`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${offsetX} ${offsetY} ${canvasX} ${canvasY}" width="100%" height="100%"><g transform="${flipY}">${outPaths.join("")}</g></svg>`;
 }
 
 // ─── Client-side auto-trace (module-level — no React state used) ─────────────
@@ -433,7 +434,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   const [penType, setPenType] = useState<PenType>("2mm");
   const [drawingMode, setDrawingMode] = useState<DrawingMode>("single");
   const [orientation, setOrientation] = useState<Orientation>("portrait");
-  const [detailLevel, setDetailLevel] = useState(5);
+  const [detailLevel, setDetailLevel] = useState(8);
   const [strokeWeight, setStrokeWeight] = useState(2);
   const [processing, setProcessing] = useState(false);
   const [processError, setProcessError] = useState<string | null>(null);

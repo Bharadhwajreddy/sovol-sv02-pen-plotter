@@ -146,6 +146,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
   const [xInput, setXInput] = useState(String(settings.offset_x));
   const [yInput, setYInput] = useState(String(settings.offset_y));
   const [imageRotation, setImageRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [imageScale, setImageScale] = useState(100);
 
   // Drag state for stickers
   const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
@@ -306,6 +307,29 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     return lines;
   }, []);
 
+  // ── Scale SVG path coordinates from drawing-area centre (for Image Scale slider) ──
+  const applyScaleToSvg = useCallback((svgString: string): string => {
+    if (imageScale === 100) return svgString;
+    const s = imageScale / 100;
+    const cx = drawingArea.x + drawingArea.width / 2;
+    const cy = drawingArea.y + drawingArea.height / 2;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgString, "image/svg+xml");
+    doc.querySelectorAll("path").forEach((path) => {
+      const d = path.getAttribute("d") || "";
+      const pts = parseSvgPathD(d);
+      if (pts.length < 2) return;
+      let newD = "";
+      pts.forEach(([x, y], i) => {
+        const nx = (cx + (x - cx) * s).toFixed(3);
+        const ny = (cy + (y - cy) * s).toFixed(3);
+        newD += i === 0 ? `M${nx},${ny}` : `L${nx},${ny}`;
+      });
+      path.setAttribute("d", newD);
+    });
+    return new XMLSerializer().serializeToString(doc.documentElement);
+  }, [drawingArea, imageScale]);
+
   // ── Generate G-code ────────────────────────────────────────────────────────
   const generateGcode = useCallback(async () => {
     setGenerating(true);
@@ -366,23 +390,23 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
           if (res.ok) {
             const result = await res.json();
             if (result.strokesSvg) {
-              lines.push(...svgToGcodeLines(result.strokesSvg, fmt, zDraw, zHop, feedDraw, feedTravel));
+              lines.push(...svgToGcodeLines(applyScaleToSvg(result.strokesSvg), fmt, zDraw, zHop, feedDraw, feedTravel));
             }
           } else {
             // API failed — fall back to existing base layer
             if (baseLayer.type === "svg" && baseLayer.svg) {
-              lines.push(...svgToGcodeLines(baseLayer.svg, fmt, zDraw, zHop, feedDraw, feedTravel));
+              lines.push(...svgToGcodeLines(applyScaleToSvg(baseLayer.svg), fmt, zDraw, zHop, feedDraw, feedTravel));
             }
           }
         } catch {
           // Network error — fall back to existing base layer
           if (baseLayer.type === "svg" && baseLayer.svg) {
-            lines.push(...svgToGcodeLines(baseLayer.svg, fmt, zDraw, zHop, feedDraw, feedTravel));
+            lines.push(...svgToGcodeLines(applyScaleToSvg(baseLayer.svg), fmt, zDraw, zHop, feedDraw, feedTravel));
           }
         }
       } else if (baseLayer.type === "svg" && baseLayer.svg) {
         // No imageFile prop — use the base layer SVG paths directly
-        lines.push(...svgToGcodeLines(baseLayer.svg, fmt, zDraw, zHop, feedDraw, feedTravel));
+        lines.push(...svgToGcodeLines(applyScaleToSvg(baseLayer.svg), fmt, zDraw, zHop, feedDraw, feedTravel));
       }
 
       lines.push("");
@@ -454,7 +478,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     } finally {
       setGenerating(false);
     }
-  }, [textElements, stickerElements, settings, drawingArea, baseLayer, borderResult, imageFile, processParams, svgToGcodeLines, onGcodeReady]);
+  }, [textElements, stickerElements, settings, drawingArea, baseLayer, borderResult, imageFile, processParams, svgToGcodeLines, applyScaleToSvg, onGcodeReady]);
 
   // ── Canvas pixel dimensions ────────────────────────────────────────────────
   const canvasPx = { width: a4.width * pxPerMm, height: a4.height * pxPerMm };
@@ -537,7 +561,10 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
                 left: daPx.x, top: daPx.y,
                 width: daPx.width, height: daPx.height,
                 overflow: "hidden",
-                transform: imageRotation ? `rotate(${imageRotation}deg)` : undefined,
+                transform: [
+                  imageRotation ? `rotate(${imageRotation}deg)` : "",
+                  imageScale !== 100 ? `scale(${(imageScale / 100).toFixed(2)})` : "",
+                ].filter(Boolean).join(" ") || undefined,
                 transformOrigin: "center",
               }}
               dangerouslySetInnerHTML={{ __html: baseLayer.svg }}
@@ -552,7 +579,10 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
               style={{
                 left: daPx.x, top: daPx.y,
                 width: daPx.width, height: daPx.height,
-                transform: imageRotation ? `rotate(${imageRotation}deg)` : undefined,
+                transform: [
+                  imageRotation ? `rotate(${imageRotation}deg)` : "",
+                  imageScale !== 100 ? `scale(${(imageScale / 100).toFixed(2)})` : "",
+                ].filter(Boolean).join(" ") || undefined,
                 transformOrigin: "center",
               }}
             />
@@ -750,6 +780,25 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
                     className="w-full px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.10] text-white text-xs focus:outline-none focus:border-purple-500/50"
                   />
                 </label>
+              </div>
+              <div className="mt-3 flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-white/50">Image Scale: {imageScale}%</span>
+                  <button
+                    onClick={() => setImageScale(100)}
+                    className="text-[10px] text-purple-400/60 hover:text-purple-400 transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <input
+                  type="range" min={50} max={200} step={5} value={imageScale}
+                  onChange={(e) => setImageScale(Number(e.target.value))}
+                  className="w-full accent-purple-500"
+                />
+                <p className="text-[9px] text-white/25">
+                  &gt;100% enlarges image beyond drawing area — edges clip to paper
+                </p>
               </div>
               <p className="text-[9px] text-white/25 mt-2">
                 {drawingArea.x},{drawingArea.y} → {drawingArea.x + drawingArea.width},{drawingArea.y + drawingArea.height} mm
