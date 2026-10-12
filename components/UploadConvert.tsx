@@ -67,8 +67,8 @@ const DRAWING_MODES: { id: DrawingMode; label: string; icon: React.ReactNode; de
 ];
 
 // ─── Client-side auto-trace (module-level — no React state used) ─────────────
-// Full Canny + contour tracing pipeline. Produces SVG paths in plotter mm coords.
-async function clientSideAutoTrace(f: File, canvasX: number, canvasY: number): Promise<string> {
+// Full Canny + contour tracing pipeline. Produces SVG paths in image pixel coords.
+async function clientSideAutoTrace(f: File): Promise<string> {
   const bitmap = await createImageBitmap(f);
   const maxDim = 800;
   const scale = Math.min(maxDim / bitmap.width, maxDim / bitmap.height, 1);
@@ -222,8 +222,8 @@ async function clientSideAutoTrace(f: File, canvasX: number, canvasY: number): P
     return [pts[0], pts[pts.length-1]];
   };
 
-  const scaleX = canvasX / w;
-  const scaleY = canvasY / h;
+  // Keep image pixel coordinates (uniform scale) — the Composer fits and places
+  // the artwork inside the drawing area, so stretching it here would distort it.
   const paths: string[] = [];
 
   for (const stroke of strokes) {
@@ -231,14 +231,14 @@ async function clientSideAutoTrace(f: File, canvasX: number, canvasY: number): P
     if (simplified.length < 2) continue;
     const parts: string[] = [];
     simplified.forEach(([px, py], i) => {
-      const mx = (px * scaleX).toFixed(3);
-      const my = (py * scaleY).toFixed(3);
+      const mx = px.toFixed(2);
+      const my = py.toFixed(2);
       parts.push(i === 0 ? `M ${mx},${my}` : `L ${mx},${my}`);
     });
     paths.push(`<path d="${parts.join(" ")}" stroke="black" fill="none" stroke-width="0.3"/>`);
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasX} ${canvasY}" width="${canvasX}mm" height="${canvasY}mm">${paths.join("")}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${paths.join("")}</svg>`;
 }
 
 function formatTime(s: number) {
@@ -508,7 +508,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
     // Client-side fallback: use Canny edge detection to produce sketch SVG
     // then pass it as the base layer to Composer
     try {
-      const svg = await clientSideAutoTrace(file, settings.canvasX, settings.canvasY);
+      const svg = await clientSideAutoTrace(file);
       setAutoTraceSvg(svg);
       setStage("composer");
     } catch (err) {
@@ -544,7 +544,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
 
     // Client-side fallback: use Canvas API for edge detection
     try {
-      const svg = await clientSideAutoTrace(file, settings.canvasX, settings.canvasY);
+      const svg = await clientSideAutoTrace(file);
       setAutoTraceSvg(svg);
       setStage("svg-editor");
     } catch (err) {
@@ -600,8 +600,8 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   };
 
   // ── Base layer for Composer ──────────────────────────────────────────────
-  // Prefer strokesSvg (mm-coordinate SVG from API) so Composer can include image strokes in G-code.
-  // Fall back to client-side auto-trace SVG, then PNG preview.
+  // Prefer the auto-trace SVG (possibly edited), then strokesSvg from the API (image-pixel
+  // coordinates), then the PNG preview. Composer places the artwork and builds the G-code.
   const composerBaseLayer = autoTraceSvg
     ? { type: "svg" as const, svg: autoTraceSvg }
     : processResult?.strokesSvg
@@ -609,15 +609,6 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
       : processResult?.sketchDataUrl
         ? { type: "sketch" as const, dataUrl: processResult.sketchDataUrl }
         : { type: "sketch" as const, dataUrl: "" };
-
-  // ── Processing params for Composer (to re-call API with updated drawing area) ──
-  const composerProcessParams = {
-    penType,
-    drawingMode,
-    orientation,
-    detailLevel,
-    strokeWeight,
-  };
 
   // ── Session meta for rating ──────────────────────────────────────────────
   const sessionMeta = {
@@ -835,8 +826,6 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
           <ComposerWrapper
             baseLayer={composerBaseLayer}
             settings={plotterSettings}
-            imageFile={file ?? undefined}
-            processParams={composerProcessParams}
             onGcodeReady={handleGcodeReady}
           />
         </div>

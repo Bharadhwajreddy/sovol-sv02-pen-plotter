@@ -915,18 +915,20 @@ function scaleStrokes(strokes: Stroke[], imgW: number, imgH: number, s: PlotterS
   );
 }
 
-// ─── SVG with absolute mm coordinates (for Composer G-code generation) ────────
-function buildStrokesSvg(scaledStrokes: Stroke[]): string {
+// ─── SVG of the strokes in image pixel space (for the Composer) ───────────────
+// y points down like the source image; the viewBox gives the Composer the image
+// size so it can fit, move, scale and rotate the artwork before making G-code.
+function buildStrokesSvg(strokes: Stroke[], imgW: number, imgH: number): string {
   const paths: string[] = [];
-  for (const stroke of scaledStrokes) {
+  for (const stroke of strokes) {
     if (stroke.length < 2) continue;
-    let d = `M${stroke[0][0].toFixed(3)},${stroke[0][1].toFixed(3)}`;
+    let d = `M${stroke[0][0].toFixed(2)},${stroke[0][1].toFixed(2)}`;
     for (let i = 1; i < stroke.length; i++) {
-      d += `L${stroke[i][0].toFixed(3)},${stroke[i][1].toFixed(3)}`;
+      d += `L${stroke[i][0].toFixed(2)},${stroke[i][1].toFixed(2)}`;
     }
-    paths.push(`<path d="${d}" stroke="black" fill="none" stroke-width="0.3"/>`);
+    paths.push(`<path d="${d}" stroke="black" fill="none" stroke-width="1"/>`);
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg">${paths.join("")}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${imgW} ${imgH}" width="${imgW}" height="${imgH}">${paths.join("")}</svg>`;
 }
 
 // ─── G-code with Z-hop on every travel ───────────────────────────────────────
@@ -1340,7 +1342,7 @@ export async function POST(request: NextRequest) {
     const { gcode, totalLen } = buildGcode(scaledStrokes, s);
     const sketchDataUrl = buildSvg(sortedStrokes, imgW, imgH, darknessMap);
     const darknessMapUrl = buildDarknessMapSvg(darknessMap, imgW, imgH);
-    const strokesSvg = buildStrokesSvg(scaledStrokes);
+    const strokesSvg = buildStrokesSvg(sortedStrokes, imgW, imgH);
 
     const drawTimeSec = Math.round(
       (totalLen / s.feed_draw + scaledStrokes.length * 30 / s.feed_travel) * 60

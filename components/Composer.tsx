@@ -4,7 +4,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { renderBorder, BorderConfig, BorderStyle, DrawingArea } from "@/lib/border-renderer";
 import { renderText, HersheyFontName } from "@/lib/hershey-fonts";
 import { STICKERS, StickerMeta, StickerCategory, getStickerCategories, getStickersByCategory } from "@/lib/sticker-data";
-import { Download, Plus, Type, Layers, ChevronRight, ChevronLeft, RotateCcw } from "lucide-react";
+import {
+  Artwork, Placement, Point, Polyline, artworkFromSvg, artworkSize, boxArtwork, constrainPlacement,
+  fitPlacement, normalizeAngle, pageToMachine, parsePathD, rotatedExtents, svgTransform, toLocal, toMachine,
+} from "@/lib/artwork-placement";
+import { Download, Plus, ChevronRight, ChevronLeft, RotateCcw, RotateCw, Maximize2, Crosshair } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,19 +58,9 @@ interface StickerElement {
   passes: number;
 }
 
-export interface ProcessParams {
-  penType: string;
-  drawingMode: string;
-  orientation: string;
-  detailLevel: number;
-  strokeWeight: number;
-}
-
 export interface ComposerProps {
   baseLayer: ComposerBaseLayer;
   settings: PlotterSettings;
-  imageFile?: File;
-  processParams?: ProcessParams;
   onGcodeReady: (result: GcodeResult) => void;
 }
 
@@ -99,30 +93,40 @@ export function clampDrawingArea(
   return { width: w, height: h, x: cx, y: cy };
 }
 
-// ─── SVG path D parser (M/L/Z only) ──────────────────────────────────────────
-function parseSvgPathD(d: string): Array<[number, number]> {
-  const pts: Array<[number, number]> = [];
-  const tokens = d.match(/[MLZmlz]|[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?/g) || [];
-  let i = 0;
-  while (i < tokens.length) {
-    const tok = tokens[i];
-    if (tok === "M" || tok === "L") {
-      i++;
-      if (i + 1 < tokens.length) {
-        pts.push([parseFloat(tokens[i]), parseFloat(tokens[i + 1])]);
-        i += 2;
-      }
-    } else if (tok === "Z" || tok === "z") {
-      if (pts.length > 0) pts.push(pts[0]);
-      i++;
-    } else { i++; }
-  }
-  return pts;
+// ─── Number input that commits on blur / Enter ───────────────────────────────
+
+function NumberField({ label, value, onCommit }: { label: string; value: number; onCommit: (n: number) => void }) {
+  const show = (n: number) => String(Math.round(n * 10) / 10);
+  const [text, setText] = useState(show(value));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (!editing) setText(show(value)); }, [value, editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const n = parseFloat(text);
+    if (Number.isFinite(n)) onCommit(n);
+  };
+
+  return (
+    <label className="flex flex-col gap-1 flex-1 min-w-0">
+      <span className="text-[10px] text-white/40 truncate">{label}</span>
+      <input
+        type="number"
+        step={0.5}
+        value={text}
+        onFocus={() => setEditing(true)}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+        className="w-full px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.10] text-white text-xs focus:outline-none focus:border-purple-500/50"
+      />
+    </label>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function Composer({ baseLayer, settings, imageFile, processParams, onGcodeReady }: ComposerProps) {
+export default function Composer({ baseLayer, settings, onGcodeReady }: ComposerProps) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   // Initialize drawing area from plotter settings so it matches the actual canvas
   const [drawingArea, setDrawingArea] = useState<DrawingArea>(() => ({
@@ -153,21 +157,32 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
   // ── A4 dimensions ──────────────────────────────────────────────────────────
   const a4 = orientation === "portrait" ? A4_PORTRAIT : A4_LANDSCAPE;
 
-  // ── Scale factor: fit A4 into canvas panel — recalculates on orientation change ──
+  // ── Visible region: the A4 sheet plus any part of the drawing area beyond it ──
+  // (anything inside the drawing area gets plotted, so it must never be hidden)
+  const view = useMemo(() => {
+    const x0 = Math.min(0, drawingArea.x);
+    const y0 = Math.min(0, drawingArea.y);
+    const x1 = Math.max(a4.width, drawingArea.x + drawingArea.width);
+    const y1 = Math.max(a4.height, drawingArea.y + drawingArea.height);
+    return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+  }, [a4.width, a4.height, drawingArea]);
+  const areaOffSheet = view.width > a4.width || view.height > a4.height;
+
+  // ── Scale factor: fit the visible region into the canvas panel ──
   const [pxPerMm, setPxPerMm] = useState(2.0);
   useEffect(() => {
     const updateScale = () => {
       const vw = window.innerWidth;
       const panelWidth = panelCollapsed ? vw * 0.95 : vw * 0.65;
       const maxH = window.innerHeight * 0.75;
-      const scaleW = (panelWidth - 40) / a4.width;
-      const scaleH = maxH / a4.height;
+      const scaleW = (panelWidth - 40) / view.width;
+      const scaleH = maxH / view.height;
       setPxPerMm(Math.min(scaleW, scaleH));
     };
     updateScale();
     window.addEventListener("resize", updateScale);
     return () => window.removeEventListener("resize", updateScale);
-  }, [a4.width, a4.height, panelCollapsed, orientation]); // orientation triggers recalc
+  }, [view.width, view.height, panelCollapsed]);
 
   // ── Load last border style from localStorage ───────────────────────────────
   useEffect(() => {
@@ -273,24 +288,73 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     setSelectedStickerId(id);
   }, [drawingArea]);
 
-  // ── Parse SVG paths into G-code lines ─────────────────────────────────────
-  const svgToGcodeLines = useCallback((svgString: string, fmt: (n: number) => string, zDraw: number, zHop: number, feedDraw: number, feedTravel: number): string[] => {
-    const lines: string[] = [];
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgString, "image/svg+xml");
-    doc.querySelectorAll("path").forEach((path) => {
-      const d = path.getAttribute("d") || "";
-      const pts = parseSvgPathD(d);
-      if (pts.length < 2) return;
-      lines.push(`G0 X${fmt(pts[0][0])} Y${fmt(pts[0][1])} F${feedTravel}`);
-      lines.push(`G0 Z${fmt(zDraw)} F${feedTravel}`);
-      for (let i = 1; i < pts.length; i++) {
-        lines.push(`G1 X${fmt(pts[i][0])} Y${fmt(pts[i][1])} F${feedDraw}`);
-      }
-      lines.push(`G0 Z${fmt(zHop)} F${feedTravel}`);
+  // ── Base image artwork (parsed once per base layer) ────────────────────────
+  const baseSvg = baseLayer.type === "svg" ? baseLayer.svg : "";
+  const sketchUrl = baseLayer.type === "sketch" ? baseLayer.dataUrl : "";
+  const [sketchSize, setSketchSize] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    setSketchSize(null);
+    if (!sketchUrl) return;
+    const img = new Image();
+    img.onload = () => setSketchSize({ w: img.naturalWidth || 1, h: img.naturalHeight || 1 });
+    img.src = sketchUrl;
+  }, [sketchUrl]);
+
+  const artwork = useMemo<Artwork | null>(() => {
+    if (baseSvg) return artworkFromSvg(baseSvg);
+    if (sketchUrl && sketchSize) return boxArtwork(sketchSize.w, sketchSize.h);
+    return null;
+  }, [baseSvg, sketchUrl, sketchSize]);
+
+  // All artwork strokes as one path — the preview only updates its transform while dragging
+  const artworkPathD = useMemo(() => {
+    if (!artwork) return "";
+    return artwork.polylines
+      .map((line) => "M" + line.map(([px, py]) => `${px.toFixed(2)},${py.toFixed(2)}`).join("L"))
+      .join("");
+  }, [artwork]);
+
+  // ── Image placement: position / size / rotation inside the drawing area ────
+  const [placement, setPlacement] = useState<Placement | null>(null);
+  const [imageSelected, setImageSelected] = useState(false);
+  const extents = useMemo(
+    () => (artwork && placement ? rotatedExtents(artwork, placement.rotation) : null),
+    [artwork, placement?.rotation], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Fit the image to the drawing area whenever a new image arrives
+  useEffect(() => {
+    setPlacement(artwork ? fitPlacement(artwork, drawingArea) : null);
+  }, [artwork]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the image inside the drawing area when the area is resized
+  useEffect(() => {
+    if (!artwork) return;
+    setPlacement((p) => (p ? constrainPlacement(p, drawingArea, rotatedExtents(artwork, p.rotation)) : p));
+  }, [artwork, drawingArea.width, drawingArea.height]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Apply a placement change, clamped so the image never leaves the drawing area. */
+  const applyPlacement = useCallback((next: Placement) => {
+    if (!artwork) return;
+    setPlacement(constrainPlacement(next, drawingArea, rotatedExtents(artwork, next.rotation)));
+  }, [artwork, drawingArea]);
+
+  const fitImage = useCallback(() => {
+    if (artwork && placement) setPlacement(fitPlacement(artwork, drawingArea, placement.rotation));
+  }, [artwork, placement, drawingArea]);
+
+  const centerImage = useCallback(() => {
+    if (!placement || !extents) return;
+    applyPlacement({
+      ...placement,
+      cx: drawingArea.width / 2 - placement.scale * (extents.minX + extents.maxX) / 2,
+      cy: drawingArea.height / 2 - placement.scale * (extents.minY + extents.maxY) / 2,
     });
-    return lines;
-  }, []);
+  }, [placement, extents, drawingArea, applyPlacement]);
+
+  const rotateImageBy = useCallback((deg: number) => {
+    if (placement) applyPlacement({ ...placement, rotation: normalizeAngle(placement.rotation + deg) });
+  }, [placement, applyPlacement]);
 
   // ── Generate G-code ────────────────────────────────────────────────────────
   const generateGcode = useCallback(async () => {
@@ -305,6 +369,25 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
       const feedTravel = settings.feed_travel;
 
       const lines: string[] = [];
+      let strokeCount = 0;
+      let drawLen = 0;
+      let travelLen = 0;
+      let pen: Point = [drawingArea.x, drawingArea.y];
+
+      // One pen-down stroke through machine-coordinate points
+      const emitStroke = (pts: Point[]) => {
+        if (pts.length < 2) return;
+        travelLen += Math.hypot(pts[0][0] - pen[0], pts[0][1] - pen[1]);
+        lines.push(`G0 X${fmt(pts[0][0])} Y${fmt(pts[0][1])} F${feedTravel}`);
+        lines.push(`G0 Z${fmt(zDraw)} F${feedTravel}`);
+        for (let i = 1; i < pts.length; i++) {
+          drawLen += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+          lines.push(`G1 X${fmt(pts[i][0])} Y${fmt(pts[i][1])} F${feedDraw}`);
+        }
+        lines.push(`G0 Z${fmt(zHop)} F${feedTravel}`);
+        pen = pts[pts.length - 1];
+        strokeCount++;
+      };
 
       // Header
       lines.push("; Sovol SV02 Pen Plotter G-code");
@@ -323,54 +406,14 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
         lines.push("");
       }
 
-      // Base image strokes
+      // Base image strokes — exactly what the preview shows (same placement transform)
       lines.push("; === IMAGE ===");
-
-      if (imageFile && processParams) {
-        // Re-call the API with the current drawing area as the canvas dimensions.
-        // This ensures the image is correctly scaled and positioned within the selected area.
-        try {
-          const fd = new FormData();
-          fd.append("image", imageFile);
-          fd.append("penType", processParams.penType);
-          fd.append("drawingMode", processParams.drawingMode);
-          fd.append("orientation", processParams.orientation);
-          fd.append("detail", String(processParams.detailLevel));
-          fd.append("strokeWeight", String(processParams.strokeWeight));
-          fd.append("settings", JSON.stringify({
-            zDraw: settings.z_draw,
-            zHop: settings.z_hop,
-            feedDraw: settings.feed_draw,
-            feedTravel: settings.feed_travel,
-            canvasX: drawingArea.width,   // scale image to drawing area width
-            canvasY: drawingArea.height,  // scale image to drawing area height
-            offsetX: drawingArea.x,       // position image at drawing area X
-            offsetY: drawingArea.y,       // position image at drawing area Y
-          }));
-
-          const res = await fetch("/api/process", { method: "POST", body: fd });
-          if (res.ok) {
-            const result = await res.json();
-            if (result.strokesSvg) {
-              lines.push(...svgToGcodeLines(result.strokesSvg, fmt, zDraw, zHop, feedDraw, feedTravel));
-            }
-          } else {
-            // API failed — fall back to existing base layer
-            if (baseLayer.type === "svg" && baseLayer.svg) {
-              lines.push(...svgToGcodeLines(baseLayer.svg, fmt, zDraw, zHop, feedDraw, feedTravel));
-            }
-          }
-        } catch {
-          // Network error — fall back to existing base layer
-          if (baseLayer.type === "svg" && baseLayer.svg) {
-            lines.push(...svgToGcodeLines(baseLayer.svg, fmt, zDraw, zHop, feedDraw, feedTravel));
-          }
+      if (artwork && placement) {
+        lines.push(`; Image: ${(artworkSize(artwork).width * placement.scale).toFixed(1)}x${(artworkSize(artwork).height * placement.scale).toFixed(1)}mm, rotation ${placement.rotation.toFixed(1)}deg`);
+        for (const line of artwork.polylines) {
+          emitStroke(line.map((p) => toMachine(p, artwork, placement, drawingArea)));
         }
-      } else if (baseLayer.type === "svg" && baseLayer.svg) {
-        // No imageFile prop — use the base layer SVG paths directly
-        lines.push(...svgToGcodeLines(baseLayer.svg, fmt, zDraw, zHop, feedDraw, feedTravel));
       }
-
       lines.push("");
 
       // Text elements
@@ -380,14 +423,9 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
         rendered.svgPaths.forEach((pathStr) => {
           const dMatch = pathStr.match(/d="([^"]+)"/);
           if (!dMatch) return;
-          const pts = parseSvgPathD(dMatch[1]);
-          if (pts.length < 2) return;
-          lines.push(`G0 X${fmt(pts[0][0] + el.x)} Y${fmt(pts[0][1] + el.y)} F${feedTravel}`);
-          lines.push(`G0 Z${fmt(zDraw)} F${feedTravel}`);
-          for (let i = 1; i < pts.length; i++) {
-            lines.push(`G1 X${fmt(pts[i][0] + el.x)} Y${fmt(pts[i][1] + el.y)} F${feedDraw}`);
-          }
-          lines.push(`G0 Z${fmt(zHop)} F${feedTravel}`);
+          parsePathD(dMatch[1]).forEach((line: Polyline) =>
+            emitStroke(line.map(([gx, gy]) => pageToMachine([gx + el.x, gy + el.y], drawingArea))),
+          );
         });
       });
 
@@ -410,15 +448,9 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
         const scaleX = el.width / 100;
         const scaleY = el.height / 100;
         doc.querySelectorAll("path").forEach((path) => {
-          const d = path.getAttribute("d") || "";
-          const pts = parseSvgPathD(d);
-          if (pts.length < 2) return;
-          lines.push(`G0 X${fmt(el.x + pts[0][0] * scaleX)} Y${fmt(el.y + pts[0][1] * scaleY)} F${feedTravel}`);
-          lines.push(`G0 Z${fmt(zDraw)} F${feedTravel}`);
-          for (let i = 1; i < pts.length; i++) {
-            lines.push(`G1 X${fmt(el.x + pts[i][0] * scaleX)} Y${fmt(el.y + pts[i][1] * scaleY)} F${feedDraw}`);
-          }
-          lines.push(`G0 Z${fmt(zHop)} F${feedTravel}`);
+          parsePathD(path.getAttribute("d") || "").forEach((line) =>
+            emitStroke(line.map(([px, py]) => pageToMachine([el.x + px * scaleX, el.y + py * scaleY], drawingArea))),
+          );
         });
       });
 
@@ -430,9 +462,9 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
       lines.push("M84 ; disable motors");
 
       const gcode = lines.join("\n");
-      const strokeCount = lines.filter((l) => l.startsWith(`G0 Z${fmt(zDraw)}`)).length;
-      const pathLengthMm = 0;
-      const estimatedTimeSeconds = Math.round((strokeCount * 2 * feedDraw) / 60);
+      const pathLengthMm = Math.round(drawLen);
+      // Drawing + travel time, plus ~1s per pen lift/drop
+      const estimatedTimeSeconds = Math.round((drawLen / feedDraw + travelLen / feedTravel) * 60 + strokeCount);
 
       onGcodeReady({ gcode, stats: { strokeCount, estimatedTimeSeconds, pathLengthMm } });
     } catch (err) {
@@ -440,16 +472,85 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     } finally {
       setGenerating(false);
     }
-  }, [textElements, stickerElements, settings, drawingArea, baseLayer, borderResult, imageFile, processParams, svgToGcodeLines, onGcodeReady]);
+  }, [textElements, stickerElements, settings, drawingArea, borderResult, artwork, placement, onGcodeReady]);
+
+  // ── Image drag / resize / rotate on the canvas ─────────────────────────────
+  const svgRef = useRef<SVGSVGElement>(null);
+  const imageDragRef = useRef<{ mode: "move" | "scale" | "rotate"; start: Point; orig: Placement; pointerId: number } | null>(null);
+
+  useEffect(() => { setImageSelected(!!artwork); }, [artwork]);
+
+  /** Screen position → page mm (the SVG viewBox is in page mm). */
+  const toPagePoint = (clientX: number, clientY: number): Point | null => {
+    const ctm = svgRef.current?.getScreenCTM();
+    if (!ctm) return null;
+    const pt = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+    return [pt.x, pt.y];
+  };
+
+  const startImageDrag = (mode: "move" | "scale" | "rotate") => (e: React.PointerEvent) => {
+    if (!placement || e.button !== 0) return;
+    const start = toPagePoint(e.clientX, e.clientY);
+    if (!start) return;
+    e.stopPropagation();
+    e.preventDefault();
+    svgRef.current?.setPointerCapture(e.pointerId);
+    imageDragRef.current = { mode, start, orig: placement, pointerId: e.pointerId };
+    setImageSelected(true);
+  };
+
+  const onCanvasPointerMove = (e: React.PointerEvent) => {
+    const drag = imageDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const pt = toPagePoint(e.clientX, e.clientY);
+    if (!pt) return;
+    const { orig, start } = drag;
+    const center: Point = [drawingArea.x + orig.cx, drawingArea.y + orig.cy];
+    if (drag.mode === "move") {
+      applyPlacement({ ...orig, cx: orig.cx + pt[0] - start[0], cy: orig.cy + pt[1] - start[1] });
+    } else if (drag.mode === "scale") {
+      const d0 = Math.hypot(start[0] - center[0], start[1] - center[1]);
+      const d1 = Math.hypot(pt[0] - center[0], pt[1] - center[1]);
+      if (d0 > 1e-6) applyPlacement({ ...orig, scale: (orig.scale * d1) / d0 });
+    } else {
+      const a0 = Math.atan2(start[1] - center[1], start[0] - center[0]);
+      const a1 = Math.atan2(pt[1] - center[1], pt[0] - center[0]);
+      let rotation = orig.rotation + ((a1 - a0) * 180) / Math.PI;
+      if (e.shiftKey) rotation = Math.round(rotation / 15) * 15; // Shift snaps to 15°
+      applyPlacement({ ...orig, rotation: normalizeAngle(rotation) });
+    }
+  };
+
+  const endImageDrag = (e: React.PointerEvent) => {
+    if (imageDragRef.current?.pointerId !== e.pointerId) return;
+    imageDragRef.current = null;
+    if (svgRef.current?.hasPointerCapture(e.pointerId)) svgRef.current.releasePointerCapture(e.pointerId);
+  };
+
+  // Selection frame + handles, in page mm
+  const frame = useMemo(() => {
+    if (!artwork || !placement) return null;
+    const b = artwork.bounds;
+    const corners = ([[b.minX, b.minY], [b.maxX, b.minY], [b.maxX, b.maxY], [b.minX, b.maxY]] as Point[])
+      .map((p) => {
+        const [lx, ly] = toLocal(p, artwork, placement);
+        return [drawingArea.x + lx, drawingArea.y + ly] as Point;
+      });
+    const center: Point = [drawingArea.x + placement.cx, drawingArea.y + placement.cy];
+    const topMid: Point = [(corners[0][0] + corners[1][0]) / 2, (corners[0][1] + corners[1][1]) / 2];
+    const len = Math.hypot(topMid[0] - center[0], topMid[1] - center[1]);
+    const dir: Point = len > 1e-6 ? [(topMid[0] - center[0]) / len, (topMid[1] - center[1]) / len] : [0, -1];
+    const reach = 22 / pxPerMm;
+    const rotHandle: Point = [topMid[0] + dir[0] * reach, topMid[1] + dir[1] * reach];
+    return { corners, topMid, rotHandle };
+  }, [artwork, placement, drawingArea, pxPerMm]);
 
   // ── Canvas pixel dimensions ────────────────────────────────────────────────
-  const canvasPx = { width: a4.width * pxPerMm, height: a4.height * pxPerMm };
-  const daPx = {
-    x: drawingArea.x * pxPerMm,
-    y: drawingArea.y * pxPerMm,
-    width: drawingArea.width * pxPerMm,
-    height: drawingArea.height * pxPerMm,
-  };
+  const canvasPx = { width: view.width * pxPerMm, height: view.height * pxPerMm };
+  const px = (mmX: number, mmY: number) => ({ left: (mmX - view.x) * pxPerMm, top: (mmY - view.y) * pxPerMm });
+  const handleR = 6 / pxPerMm;
+  const imgW = artwork && placement ? artworkSize(artwork).width * placement.scale : 0;
+  const imgH = artwork && placement ? artworkSize(artwork).height * placement.scale : 0;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -473,7 +574,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black text-white bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-purple-500/20"
           >
             <Download size={12} />
-            {generating ? (imageFile ? "Processing image…" : "Generating…") : "Generate G-code"}
+            {generating ? "Generating…" : "Generate G-code"}
           </button>
         </div>
 
@@ -483,54 +584,93 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
           </div>
         )}
 
-        {/* A4 Canvas */}
+        {/* A4 Canvas — everything is drawn in page mm, so the preview matches the G-code */}
         <div
           ref={canvasRef}
-          className="relative bg-white rounded-xl overflow-hidden shadow-2xl shadow-black/40 mx-auto"
+          className="relative rounded-xl overflow-hidden shadow-2xl shadow-black/40 mx-auto bg-zinc-300"
           style={{ width: canvasPx.width, height: canvasPx.height }}
           aria-label={`A4 canvas ${orientation}`}
         >
-          {/* Drawing area indicator */}
-          <div
-            className="absolute border-2 border-dashed border-blue-400/50 pointer-events-none"
-            style={{
-              left: daPx.x,
-              top: daPx.y,
-              width: daPx.width,
-              height: daPx.height,
-            }}
-          />
+          <svg
+            ref={svgRef}
+            className="absolute inset-0"
+            style={{ width: canvasPx.width, height: canvasPx.height, touchAction: "none" }}
+            viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`}
+            onPointerDown={() => setImageSelected(false)}
+            onPointerMove={onCanvasPointerMove}
+            onPointerUp={endImageDrag}
+            onPointerCancel={endImageDrag}
+          >
+            {/* A4 sheet */}
+            <rect x={0} y={0} width={a4.width} height={a4.height} fill="white" />
 
-          {/* Base image layer */}
-          {baseLayer.type === "svg" && baseLayer.svg && (
-            <div
-              className="absolute pointer-events-none"
-              style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height }}
-              dangerouslySetInnerHTML={{ __html: baseLayer.svg }}
+            {/* Drawing area indicator */}
+            <rect
+              x={drawingArea.x} y={drawingArea.y} width={drawingArea.width} height={drawingArea.height}
+              fill="none" stroke="rgba(96,165,250,0.6)" strokeWidth={1.5} strokeDasharray="6 4"
+              vectorEffect="non-scaling-stroke" pointerEvents="none"
             />
-          )}
-          {baseLayer.type === "sketch" && baseLayer.dataUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={baseLayer.dataUrl}
-              alt="Base sketch"
-              className="absolute object-contain pointer-events-none"
-              style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height }}
-            />
-          )}
 
-          {/* Border overlay */}
-          {borderResult.svgPaths.length > 0 && (
-            <svg
-              className="absolute inset-0 pointer-events-none"
-              style={{ width: canvasPx.width, height: canvasPx.height }}
-              viewBox={`0 0 ${a4.width} ${a4.height}`}
-            >
-              {borderResult.svgPaths.map((p, i) => (
-                <g key={i} dangerouslySetInnerHTML={{ __html: p }} />
-              ))}
-            </svg>
-          )}
+            {/* Base image layer */}
+            {artwork && placement && (
+              <g transform={svgTransform(artwork, placement, drawingArea)} pointerEvents="none">
+                {artworkPathD && (
+                  <path d={artworkPathD} fill="none" stroke="#111" strokeWidth={1}
+                    strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                )}
+                {!artworkPathD && sketchUrl && sketchSize && (
+                  <image href={sketchUrl} x={0} y={0} width={sketchSize.w} height={sketchSize.h} preserveAspectRatio="none" />
+                )}
+              </g>
+            )}
+
+            {/* Border overlay */}
+            {borderResult.svgPaths.map((p, i) => (
+              <g key={i} pointerEvents="none" dangerouslySetInnerHTML={{ __html: p }} />
+            ))}
+
+            {/* Image hit area, selection frame and handles */}
+            {frame && (
+              <g>
+                <polygon
+                  points={frame.corners.map((c) => c.join(",")).join(" ")}
+                  fill="transparent"
+                  stroke={imageSelected ? "#a855f7" : "none"} strokeWidth={1.5}
+                  strokeDasharray={imageSelected ? "4 3" : undefined}
+                  vectorEffect="non-scaling-stroke"
+                  style={{ cursor: "move" }}
+                  onPointerDown={startImageDrag("move")}
+                />
+                {imageSelected && (
+                  <>
+                    <line
+                      x1={frame.topMid[0]} y1={frame.topMid[1]} x2={frame.rotHandle[0]} y2={frame.rotHandle[1]}
+                      stroke="#a855f7" strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none"
+                    />
+                    <circle
+                      cx={frame.rotHandle[0]} cy={frame.rotHandle[1]} r={handleR}
+                      fill="#a855f7" stroke="white" strokeWidth={1.5} vectorEffect="non-scaling-stroke"
+                      style={{ cursor: "grab" }}
+                      onPointerDown={startImageDrag("rotate")}
+                    >
+                      <title>Drag to rotate (hold Shift to snap to 15°)</title>
+                    </circle>
+                    {frame.corners.map((c, i) => (
+                      <rect
+                        key={i}
+                        x={c[0] - handleR * 0.8} y={c[1] - handleR * 0.8} width={handleR * 1.6} height={handleR * 1.6}
+                        fill="white" stroke="#a855f7" strokeWidth={1.5} vectorEffect="non-scaling-stroke"
+                        style={{ cursor: i % 2 === 0 ? "nwse-resize" : "nesw-resize" }}
+                        onPointerDown={startImageDrag("scale")}
+                      >
+                        <title>Drag to resize</title>
+                      </rect>
+                    ))}
+                  </>
+                )}
+              </g>
+            )}
+          </svg>
 
           {/* Text elements */}
           {textElements.map((el) => {
@@ -539,7 +679,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
               <div
                 key={el.id}
                 className={`absolute cursor-move select-none ${selectedTextId === el.id ? "ring-2 ring-blue-400" : ""}`}
-                style={{ left: el.x * pxPerMm, top: el.y * pxPerMm }}
+                style={px(el.x, el.y)}
                 onClick={() => setSelectedTextId(el.id)}
               >
                 <svg
@@ -560,8 +700,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
               key={el.id}
               className={`absolute cursor-move select-none ${selectedStickerId === el.id ? "ring-2 ring-purple-400 rounded" : ""}`}
               style={{
-                left: el.x * pxPerMm,
-                top: el.y * pxPerMm,
+                ...px(el.x, el.y),
                 width: el.width * pxPerMm,
                 height: el.height * pxPerMm,
                 touchAction: "none",
@@ -602,6 +741,15 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
             </div>
           ))}
         </div>
+
+        {areaOffSheet && (
+          <p className="text-[11px] text-amber-300/80 text-center">
+            The drawing area extends past the A4 sheet (grey zone) — make sure your paper covers it, or shrink the area.
+          </p>
+        )}
+        {!artwork && (
+          <p className="text-[11px] text-white/40 text-center">No image strokes to place.</p>
+        )}
       </div>
 
       {/* ── Controls panel ── */}
@@ -680,6 +828,52 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
                 {drawingArea.x},{drawingArea.y} → {drawingArea.x + drawingArea.width},{drawingArea.y + drawingArea.height} mm
               </p>
             </div>
+
+            {/* Image placement controls */}
+            {artwork && placement && extents && (
+              <div className="rounded-2xl border border-white/[0.08] bg-[#161616] p-4">
+                <p className="text-xs font-bold text-white/60 mb-3 uppercase tracking-wider">Image</p>
+                <div className="flex gap-2 mb-2">
+                  <NumberField label="Width (mm)" value={imgW}
+                    onCommit={(w) => applyPlacement({ ...placement, scale: w / artworkSize(artwork).width })} />
+                  <NumberField label="Height (mm)" value={imgH}
+                    onCommit={(h) => applyPlacement({ ...placement, scale: h / artworkSize(artwork).height })} />
+                </div>
+                <div className="flex gap-2 mb-2">
+                  <NumberField label="X from area left (mm)" value={placement.cx + placement.scale * extents.minX}
+                    onCommit={(v) => applyPlacement({ ...placement, cx: v - placement.scale * extents.minX })} />
+                  <NumberField label="Y from area top (mm)" value={placement.cy + placement.scale * extents.minY}
+                    onCommit={(v) => applyPlacement({ ...placement, cy: v - placement.scale * extents.minY })} />
+                </div>
+                <label className="flex flex-col gap-1 mb-2">
+                  <span className="text-[10px] text-white/40">Rotation: {Math.round(placement.rotation)}°</span>
+                  <input type="range" min={-180} max={180} step={1} value={Math.round(placement.rotation)}
+                    onChange={(e) => applyPlacement({ ...placement, rotation: Number(e.target.value) })}
+                    className="w-full accent-purple-500" />
+                </label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  <button onClick={() => rotateImageBy(-90)} title="Rotate 90° left"
+                    className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold bg-white/[0.04] border border-white/[0.08] text-white/60 hover:text-white">
+                    <RotateCcw size={11} /> 90°
+                  </button>
+                  <button onClick={() => rotateImageBy(90)} title="Rotate 90° right"
+                    className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold bg-white/[0.04] border border-white/[0.08] text-white/60 hover:text-white">
+                    <RotateCw size={11} /> 90°
+                  </button>
+                  <button onClick={fitImage} title="Make the image as large as the drawing area allows"
+                    className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold bg-white/[0.04] border border-white/[0.08] text-white/60 hover:text-white">
+                    <Maximize2 size={11} /> Fit
+                  </button>
+                  <button onClick={centerImage} title="Center the image in the drawing area"
+                    className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold bg-white/[0.04] border border-white/[0.08] text-white/60 hover:text-white">
+                    <Crosshair size={11} /> Center
+                  </button>
+                </div>
+                <p className="text-[9px] text-white/25 mt-2">
+                  Drag the image to move it, a corner to resize, the round handle to rotate. It always stays inside the drawing area, so nothing gets cut off.
+                </p>
+              </div>
+            )}
 
             {/* Tab bar */}
             <div className="flex rounded-xl bg-white/[0.04] border border-white/[0.06] p-1 gap-1">
