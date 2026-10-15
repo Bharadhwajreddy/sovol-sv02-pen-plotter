@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   ImageIcon, Download, Loader2, AlertCircle,
   CheckCircle2, Layers, Pen, LayoutGrid,
@@ -425,10 +425,6 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   // ── Upload & mode state ──────────────────────────────────────────────────
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [uploadMode, setUploadMode] = useState<"raw_photo" | "ai_sketch">("ai_sketch");
-  const [classifying, setClassifying] = useState(false);
-  const [classifyConfidence, setClassifyConfidence] = useState<number | null>(null);
-  const [manualOverride, setManualOverride] = useState(false);
 
   // ── Processing state ─────────────────────────────────────────────────────
   const [penType, setPenType] = useState<PenType>("2mm");
@@ -440,9 +436,8 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   const [processError, setProcessError] = useState<string | null>(null);
 
   // ── Pipeline stage state ─────────────────────────────────────────────────
-  // "upload" → "svg-editor" (raw photo) → "composer" → "download"
-  // "upload" → "composer" (ai sketch) → "download"
-  const [stage, setStage] = useState<"upload" | "svg-editor" | "composer" | "download">("upload");
+  // "upload" → "composer" → "download"
+  const [stage, setStage] = useState<"upload" | "composer" | "download">("upload");
   const [autoTraceSvg, setAutoTraceSvg] = useState<string | null>(null);
   const [processResult, setProcessResult] = useState<ProcessResult | null>(null);
   const [gcodeResult, setGcodeResult] = useState<{ gcode: string; stats: ProcessResult["stats"] } | null>(null);
@@ -451,17 +446,6 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   const [showRating, setShowRating] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // ── Load last upload mode from localStorage ──────────────────────────────
-  useEffect(() => {
-    const saved = localStorage.getItem("last_upload_mode") as "raw_photo" | "ai_sketch" | null;
-    if (saved) setUploadMode(saved);
-  }, []);
-
-  // ── Persist upload mode ──────────────────────────────────────────────────
-  useEffect(() => {
-    localStorage.setItem("last_upload_mode", uploadMode);
-  }, [uploadMode]);
 
   // ── Handle file selection ────────────────────────────────────────────────
   const handleFile = useCallback(async (f: File) => {
@@ -476,80 +460,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
     setFile(f);
     setProcessError(null);
     setPreviewUrl(URL.createObjectURL(f));
-    setManualOverride(false);
-    setClassifyConfidence(null);
     setStage("upload");
-
-    // SVG files are always AI sketches — skip classification
-    if (isSvg) {
-      setUploadMode("ai_sketch");
-      setClassifyConfidence(1.0);
-      return;
-    }
-
-    // Auto-classify — try API first, fall back to client-side heuristic
-    setClassifying(true);
-    try {
-      const fd = new FormData();
-      fd.append("image", f);
-      const res = await fetch("/api/classify", { method: "POST", body: fd });
-      if (res.ok) {
-        const data = await res.json();
-        setUploadMode(data.mode);
-        setClassifyConfidence(data.confidence);
-      } else {
-        // API unavailable (Python not on Vercel) — use client-side heuristic
-        await classifyClientSide(f);
-      }
-    } catch {
-      // Network error — use client-side heuristic
-      await classifyClientSide(f);
-    } finally {
-      setClassifying(false);
-    }
-  }, []);
-
-  // Client-side image classification using Canvas API (no Python needed)
-  const classifyClientSide = useCallback(async (f: File) => {
-    try {
-      const bitmap = await createImageBitmap(f);
-      const canvas = document.createElement("canvas");
-      const size = 64; // sample at 64x64 for speed
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.drawImage(bitmap, 0, 0, size, size);
-      const data = ctx.getImageData(0, 0, size, size).data;
-
-      // Compute per-channel std dev (R, G, B)
-      const channels = [0, 1, 2].map((c) => {
-        const vals = Array.from({ length: size * size }, (_, i) => data[i * 4 + c]);
-        const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-        const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
-        return Math.sqrt(variance);
-      });
-      const meanChannelStd = channels.reduce((a, b) => a + b, 0) / 3;
-
-      // Compute grayscale histogram std dev
-      const hist = new Array(256).fill(0);
-      for (let i = 0; i < size * size; i++) {
-        const gray = Math.round(0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]);
-        hist[gray]++;
-      }
-      const histMean = hist.reduce((a, b) => a + b, 0) / 256;
-      const histStd = Math.sqrt(hist.reduce((a, b) => a + (b - histMean) ** 2, 0) / 256);
-
-      const isRawPhoto = meanChannelStd > 15 || histStd > 40;
-      const mode = isRawPhoto ? "raw_photo" : "ai_sketch";
-      const confidence = Math.min(1.0, Math.max(meanChannelStd, histStd / 40) / 30);
-
-      setUploadMode(mode as "raw_photo" | "ai_sketch");
-      setClassifyConfidence(confidence);
-    } catch {
-      // If canvas fails, default to ai_sketch
-      setUploadMode("ai_sketch");
-    }
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -618,57 +529,6 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
     }
   }, [file, penType, drawingMode, orientation, detailLevel, strokeWeight, settings]);
 
-  // ── Process: Raw Photo path (auto-trace with client-side fallback) ──────────
-  const processRawPhoto = useCallback(async () => {
-    if (!file) return;
-    setProcessing(true);
-    setProcessError(null);
-
-    try {
-      // Try server-side auto-trace first
-      const fd = new FormData();
-      fd.append("image", file);
-      fd.append("settings", JSON.stringify({
-        canvas_x: settings.canvasX, canvas_y: settings.canvasY,
-        offset_x: settings.offsetX, offset_y: settings.offsetY,
-      }));
-
-      const res = await fetch("/api/autotrace", { method: "POST", body: fd });
-      if (res.ok) {
-        const data = await res.json();
-        setAutoTraceSvg(data.svg);
-        setStage("svg-editor");
-        return;
-      }
-    } catch { /* fall through to client-side */ }
-
-    // Client-side fallback: use Canvas API for edge detection
-    try {
-      const svg = await clientSideAutoTrace(file, settings.canvasX, settings.canvasY);
-      setAutoTraceSvg(svg);
-      setStage("svg-editor");
-    } catch (err) {
-      setProcessError(err instanceof Error ? err.message : "Auto-trace failed");
-    } finally {
-      setProcessing(false);
-    }
-  }, [file, settings]);
-
-  // ── Route to correct pipeline ────────────────────────────────────────────
-  const handleProcess = useCallback(() => {
-    if (uploadMode === "raw_photo") {
-      processRawPhoto();
-    } else {
-      processAiSketch();
-    }
-  }, [uploadMode, processRawPhoto, processAiSketch]);
-
-  // ── SVG Editor → Composer ────────────────────────────────────────────────
-  const handleSvgEditorProceed = useCallback((cleanedSvg: string) => {
-    setAutoTraceSvg(cleanedSvg);
-    setStage("composer");
-  }, []);
-
   // ── G-code ready ─────────────────────────────────────────────────────────
   const handleGcodeReady = useCallback((result: { gcode: string; stats: ProcessResult["stats"] }) => {
     setGcodeResult(result);
@@ -679,7 +539,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   const handleDownload = useCallback(() => {
     if (!gcodeResult) return;
     const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const filename = `plotter_${uploadMode}_${orientation}_${ts}.gcode`;
+    const filename = `plotter_${orientation}_${ts}.gcode`;
     const blob = new Blob([gcodeResult.gcode], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -688,7 +548,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
     a.click();
     URL.revokeObjectURL(url);
     setShowRating(true);
-  }, [gcodeResult, uploadMode, orientation]);
+  }, [gcodeResult, orientation]);
 
   // ── Plotter settings adapter ─────────────────────────────────────────────
   const plotterSettings = {
@@ -721,7 +581,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
 
   // ── Session meta for rating ──────────────────────────────────────────────
   const sessionMeta = {
-    upload_mode: uploadMode,
+    upload_mode: "ai_sketch" as const,
     orientation,
     drawing_mode: drawingMode,
     detail_level: detailLevel,
@@ -781,46 +641,6 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
               </div>
             </Card>
 
-            {/* Mode indicator */}
-            {file && (
-              <Card>
-                <div className="px-5 py-4 flex items-center gap-4 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    {classifying ? (
-                      <Loader2 size={14} className="animate-spin text-purple-400" />
-                    ) : (
-                      <div className={`w-2 h-2 rounded-full ${uploadMode === "raw_photo" ? "bg-amber-400" : "bg-emerald-400"}`} />
-                    )}
-                    <span className="text-sm font-semibold text-white">
-                      {classifying ? "Detecting…" : uploadMode === "raw_photo" ? "Raw Photo" : "AI Sketch"}
-                    </span>
-                    {classifyConfidence !== null && !classifying && (
-                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        {Math.round(classifyConfidence * 100)}% confidence
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Manual override toggle */}
-                  <div className="flex items-center gap-2 ml-auto">
-                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>Override:</span>
-                    <button
-                      onClick={() => { setManualOverride(true); setUploadMode("ai_sketch"); }}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${uploadMode === "ai_sketch" && manualOverride ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : "bg-white/[0.04] text-white/40 border-white/[0.08] hover:text-white/70"}`}
-                    >
-                      AI Sketch
-                    </button>
-                    <button
-                      onClick={() => { setManualOverride(true); setUploadMode("raw_photo"); }}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${uploadMode === "raw_photo" && manualOverride ? "bg-amber-500/20 text-amber-300 border-amber-500/30" : "bg-white/[0.04] text-white/40 border-white/[0.08] hover:text-white/70"}`}
-                    >
-                      Raw Photo
-                    </button>
-                  </div>
-                </div>
-              </Card>
-            )}
-
             {processError && (
               <div className="flex items-center gap-3 px-4 py-3 rounded-xl border"
                 style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }}>
@@ -834,9 +654,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
           <div className="flex flex-col gap-5 lg:flex-1">
             <SectionLabel num={2} label="Settings" gradient="linear-gradient(135deg,#2563eb,#7c3aed)" />
 
-            {/* Only show AI sketch settings when in AI sketch mode */}
-            {uploadMode === "ai_sketch" && (
-              <>
+            <>
                 {/* Pen type */}
                 <Card>
                   <div className="px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
@@ -890,8 +708,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
                     </label>
                   </div>
                 </Card>
-              </>
-            )}
+            </>
 
             {/* Orientation */}
             <Card>
@@ -908,23 +725,14 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
             {/* Process button */}
             {file && (
               <button
-                onClick={handleProcess}
-                disabled={processing || classifying}
+                onClick={processAiSketch}
+                disabled={processing}
                 className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-black text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 hover:scale-[1.02]"
                 style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
-                {processing ? <><Loader2 size={14} className="animate-spin" />Processing…</> : <><Zap size={14} />{uploadMode === "raw_photo" ? "Auto-Trace Photo" : "Convert to G-code"}</>}
+                {processing ? <><Loader2 size={14} className="animate-spin" />Processing…</> : <><Zap size={14} />Convert to G-code</>}
               </button>
             )}
           </div>
-        </div>
-      )}
-
-      {/* ── Stage: SVG Editor (raw photo path) ── */}
-      {stage === "svg-editor" && autoTraceSvg && (
-        <div className="flex flex-col gap-5">
-          <SectionLabel num={2} label="Edit SVG Paths" gradient="linear-gradient(135deg,#f59e0b,#7c3aed)" />
-          {/* Lazy import SvgEditor to avoid SSR issues */}
-          <SvgEditorWrapper svg={autoTraceSvg} onProceed={handleSvgEditorProceed} />
         </div>
       )}
 
@@ -987,8 +795,8 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
         </div>
       )}
 
-      {/* ── Prompt panel (AI sketch mode only) ── */}
-      {stage === "upload" && uploadMode === "ai_sketch" && (
+      {/* ── Prompt panel ── */}
+      {stage === "upload" && (
         <div>
           <SectionLabel num={3} label="ChatGPT Prompt" gradient="linear-gradient(135deg,#a78bfa,#60a5fa)" />
           <PromptPanel penType={penType} />
@@ -1011,6 +819,5 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
 
 import dynamic from "next/dynamic";
 
-const SvgEditorWrapper = dynamic(() => import("./SvgEditor"), { ssr: false });
 const ComposerWrapper = dynamic(() => import("./Composer"), { ssr: false });
 const RatingModalWrapper = dynamic(() => import("./RatingModal"), { ssr: false });
