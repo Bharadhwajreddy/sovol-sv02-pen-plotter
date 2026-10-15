@@ -233,6 +233,43 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     });
   }, [orientation]);
 
+  // ── Base image preview (display only — G-code generation is unchanged) ────
+  // strokesSvg from /api/process has no viewBox and uses absolute plotter mm with
+  // Y pointing up, so injected as-is the browser clipped it to a 300x150px box.
+  // Wrap it in a viewBox around the image and flip Y so the whole image shows,
+  // fitted into the drawing area the same way the G-code fits it.
+  const [imageAspect, setImageAspect] = useState<number | null>(null);
+  useEffect(() => {
+    setImageAspect(null);
+    if (!imageFile) return;
+    let cancelled = false;
+    createImageBitmap(imageFile)
+      .then((bmp) => { if (!cancelled) setImageAspect(bmp.width / bmp.height); bmp.close(); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [imageFile]);
+
+  const previewSvg = useMemo(() => {
+    if (baseLayer.type !== "svg" || !baseLayer.svg) return "";
+    const svg = baseLayer.svg;
+    const openTag = svg.match(/<svg\b[^>]*>/i)?.[0] ?? "";
+    const inner = svg.replace(/^[\s\S]*?<svg\b[^>]*>/i, "").replace(/<\/svg>\s*$/i, "");
+    const wrap = (viewBox: string, content: string) =>
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="display:block">${content}</svg>`;
+
+    const vb = openTag.match(/viewBox\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (vb) return wrap(vb, inner); // auto-trace SVG: already relative, Y down
+
+    // strokesSvg: the API fitted the image (centred, aspect kept) into the settings canvas
+    let x = settings.offset_x, y = settings.offset_y, w = settings.canvas_x, h = settings.canvas_y;
+    if (imageAspect) {
+      const scale = Math.min(w / imageAspect, h);
+      const iw = imageAspect * scale, ih = scale;
+      x += (w - iw) / 2; y += (h - ih) / 2; w = iw; h = ih;
+    }
+    return wrap(`${x} ${-(y + h)} ${w} ${h}`, `<g transform="scale(1,-1)">${inner}</g>`);
+  }, [baseLayer, settings, imageAspect]);
+
   // ── Border render (memoised) ───────────────────────────────────────────────
   const borderResult = useMemo(() => {
     if (border.style === "none") return { svgPaths: [], gcodeLines: [] };
@@ -502,11 +539,11 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
           />
 
           {/* Base image layer */}
-          {baseLayer.type === "svg" && baseLayer.svg && (
+          {previewSvg && (
             <div
               className="absolute pointer-events-none"
               style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height }}
-              dangerouslySetInnerHTML={{ __html: baseLayer.svg }}
+              dangerouslySetInnerHTML={{ __html: previewSvg }}
             />
           )}
           {baseLayer.type === "sketch" && baseLayer.dataUrl && (
