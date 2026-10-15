@@ -66,6 +66,82 @@ const DRAWING_MODES: { id: DrawingMode; label: string; icon: React.ReactNode; de
   },
 ];
 
+// ─── SVG direct passthrough (module-level) ───────────────────────────────────
+// For SVG file uploads: sample all path elements using the browser's SVG engine,
+// scale to plotter canvas coordinates, and return a G-code-compatible SVG.
+// Uses negative-height viewBox to display right-side up in Composer (matching
+// the Y-flip in buildStrokesSvg on the server).
+async function processSvgFileDirect(
+  f: File,
+  canvasX: number, canvasY: number,
+  offsetX: number, offsetY: number
+): Promise<string> {
+  const svgText = await f.text();
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, "image/svg+xml");
+  const svgEl = doc.documentElement;
+
+  // Determine source coordinate space from viewBox or width/height
+  let srcW = 0, srcH = 0;
+  const vb = svgEl.getAttribute("viewBox");
+  if (vb) {
+    const parts = vb.trim().split(/[\s,]+/).map(Number);
+    if (parts.length >= 4) { srcW = parts[2]; srcH = parts[3]; }
+  }
+  if (!srcW) srcW = parseFloat(svgEl.getAttribute("width") || "0") || 500;
+  if (!srcH) srcH = parseFloat(svgEl.getAttribute("height") || "0") || 500;
+
+  // Scale+center to canvas, preserving aspect ratio
+  const fitScale = Math.min(canvasX / srcW, canvasY / srcH);
+  const padX = (canvasX - srcW * fitScale) / 2;
+  const padY = (canvasY - srcH * fitScale) / 2;
+
+  // Mount hidden live SVG in DOM so we can call getTotalLength / getPointAtLength
+  const live = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  live.setAttribute("viewBox", `0 0 ${srcW} ${srcH}`);
+  Object.assign(live.style, {
+    position: "fixed", top: "-9999px", left: "-9999px",
+    width: `${srcW}px`, height: `${srcH}px`, visibility: "hidden",
+  });
+  document.body.appendChild(live);
+
+  const outPaths: string[] = [];
+  try {
+    const pathEls = Array.from(doc.querySelectorAll("path"));
+    for (const el of pathEls) {
+      const d = el.getAttribute("d");
+      if (!d) continue;
+
+      const p = document.createElementNS("http://www.w3.org/2000/svg", "path") as SVGPathElement;
+      p.setAttribute("d", d);
+      live.appendChild(p);
+
+      const len = p.getTotalLength();
+      const nSamples = Math.min(600, Math.max(2, Math.ceil(len)));
+      const pts: string[] = [];
+
+      for (let i = 0; i <= nSamples; i++) {
+        const pt = p.getPointAtLength((i / nSamples) * len);
+        // Flip Y: SVG Y-down → plotter Y-up (same convention as buildStrokesSvg)
+        const mx = (pt.x * fitScale + padX + offsetX).toFixed(2);
+        const my = ((srcH - pt.y) * fitScale + padY + offsetY).toFixed(2);
+        pts.push(i === 0 ? `M${mx},${my}` : `L${mx},${my}`);
+      }
+      live.removeChild(p);
+
+      if (pts.length >= 2) {
+        outPaths.push(`<path d="${pts.join(" ")}" stroke="black" fill="none" stroke-width="0.5"/>`);
+      }
+    }
+  } finally {
+    document.body.removeChild(live);
+  }
+
+  // Y-flip via <g transform> — same convention as buildStrokesSvg on the server.
+  const flipY = `scale(1,-1) translate(0,${-(2 * offsetY + canvasY)})`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${offsetX} ${offsetY} ${canvasX} ${canvasY}" width="100%" height="100%"><g transform="${flipY}">${outPaths.join("")}</g></svg>`;
+}
+
 // ─── Client-side auto-trace (module-level — no React state used) ─────────────
 // Full Canny + contour tracing pipeline. Produces SVG paths in plotter mm coords.
 async function clientSideAutoTrace(f: File, canvasX: number, canvasY: number): Promise<string> {
@@ -238,7 +314,7 @@ async function clientSideAutoTrace(f: File, canvasX: number, canvasY: number): P
     paths.push(`<path d="${parts.join(" ")}" stroke="black" fill="none" stroke-width="0.3"/>`);
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasX} ${canvasY}" width="${canvasX}mm" height="${canvasY}mm">${paths.join("")}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasX} ${canvasY}" width="100%" height="100%">${paths.join("")}</svg>`;
 }
 
 function formatTime(s: number) {
@@ -358,7 +434,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   const [penType, setPenType] = useState<PenType>("2mm");
   const [drawingMode, setDrawingMode] = useState<DrawingMode>("single");
   const [orientation, setOrientation] = useState<Orientation>("portrait");
-  const [detailLevel, setDetailLevel] = useState(5);
+  const [detailLevel, setDetailLevel] = useState(8);
   const [strokeWeight, setStrokeWeight] = useState(2);
   const [processing, setProcessing] = useState(false);
   const [processError, setProcessError] = useState<string | null>(null);
@@ -390,9 +466,10 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   // ── Handle file selection ────────────────────────────────────────────────
   const handleFile = useCallback(async (f: File) => {
     // Validate file type
-    const accepted = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-    if (!accepted.includes(f.type.toLowerCase())) {
-      setProcessError("Accepted file types: JPEG, PNG, WEBP");
+    const accepted = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/svg+xml"];
+    const isSvg = f.type === "image/svg+xml" || f.name.toLowerCase().endsWith(".svg");
+    if (!accepted.includes(f.type.toLowerCase()) && !isSvg) {
+      setProcessError("Accepted file types: JPEG, PNG, WEBP, SVG");
       return;
     }
 
@@ -402,6 +479,13 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
     setManualOverride(false);
     setClassifyConfidence(null);
     setStage("upload");
+
+    // SVG files are always AI sketches — skip classification
+    if (isSvg) {
+      setUploadMode("ai_sketch");
+      setClassifyConfidence(1.0);
+      return;
+    }
 
     // Auto-classify — try API first, fall back to client-side heuristic
     setClassifying(true);
@@ -479,6 +563,22 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
     if (!file) return;
     setProcessing(true);
     setProcessError(null);
+
+    // SVG files: extract paths directly — no rasterization or edge detection needed
+    if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) {
+      try {
+        const svg = await processSvgFileDirect(
+          file, settings.canvasX, settings.canvasY, settings.offsetX, settings.offsetY
+        );
+        setAutoTraceSvg(svg);
+        setStage("composer");
+      } catch (err) {
+        setProcessError(err instanceof Error ? err.message : "SVG processing failed");
+      } finally {
+        setProcessing(false);
+      }
+      return;
+    }
 
     try {
       const fd = new FormData();
@@ -667,14 +767,14 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
                     </div>
                     <div className="text-center">
                       <p className="text-sm font-semibold text-white">Drop image here or click to browse</p>
-                      <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>JPEG, PNG, WEBP accepted</p>
+                      <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>JPEG, PNG, WEBP, SVG accepted</p>
                     </div>
                   </>
                 )}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  accept="image/jpeg,image/jpg,image/png,image/webp,image/svg+xml,.svg"
                   className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
                 />
@@ -835,7 +935,11 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
           <ComposerWrapper
             baseLayer={composerBaseLayer}
             settings={plotterSettings}
-            imageFile={file ?? undefined}
+            imageFile={
+              file && file.type !== "image/svg+xml" && !file.name.toLowerCase().endsWith(".svg")
+                ? file
+                : undefined
+            }
             processParams={composerProcessParams}
             onGcodeReady={handleGcodeReady}
           />

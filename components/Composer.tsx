@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { renderBorder, BorderConfig, BorderStyle, DrawingArea } from "@/lib/border-renderer";
 import { renderText, HersheyFontName } from "@/lib/hershey-fonts";
 import { STICKERS, StickerMeta, StickerCategory, getStickerCategories, getStickersByCategory } from "@/lib/sticker-data";
-import { Download, Plus, Type, Layers, ChevronRight, ChevronLeft, RotateCcw } from "lucide-react";
+import { Download, Plus, Type, Layers, ChevronRight, ChevronLeft, RotateCcw, RotateCw, Maximize2 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,10 +145,16 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
   const [heightInput, setHeightInput] = useState(String(settings.canvas_y));
   const [xInput, setXInput] = useState(String(settings.offset_x));
   const [yInput, setYInput] = useState(String(settings.offset_y));
+  const [imageRotation, setImageRotation] = useState<0 | 90 | 180 | 270>(0);
+  const [imageScale, setImageScale] = useState(100);
+
   // Drag state for stickers
   const dragRef = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  // Drag state for drawing area box
+  const daDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const canvasColRef = useRef<HTMLDivElement>(null);
 
   // ── A4 dimensions ──────────────────────────────────────────────────────────
   const a4 = orientation === "portrait" ? A4_PORTRAIT : A4_LANDSCAPE;
@@ -157,17 +163,26 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
   const [pxPerMm, setPxPerMm] = useState(2.0);
   useEffect(() => {
     const updateScale = () => {
-      const vw = window.innerWidth;
-      const panelWidth = panelCollapsed ? vw * 0.95 : vw * 0.65;
+      const containerW = canvasColRef.current
+        ? canvasColRef.current.offsetWidth
+        : window.innerWidth * (panelCollapsed ? 0.95 : 0.65);
       const maxH = window.innerHeight * 0.75;
-      const scaleW = (panelWidth - 40) / a4.width;
+      const scaleW = (containerW - 40) / a4.width;
       const scaleH = maxH / a4.height;
       setPxPerMm(Math.min(scaleW, scaleH));
     };
     updateScale();
+    let ro: ResizeObserver | null = null;
+    if (canvasColRef.current) {
+      ro = new ResizeObserver(updateScale);
+      ro.observe(canvasColRef.current);
+    }
     window.addEventListener("resize", updateScale);
-    return () => window.removeEventListener("resize", updateScale);
-  }, [a4.width, a4.height, panelCollapsed, orientation]); // orientation triggers recalc
+    return () => {
+      window.removeEventListener("resize", updateScale);
+      ro?.disconnect();
+    };
+  }, [a4.width, a4.height, panelCollapsed, orientation]);
 
   // ── Load last border style from localStorage ───────────────────────────────
   useEffect(() => {
@@ -233,43 +248,6 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     });
   }, [orientation]);
 
-  // ── Base image preview (display only — G-code generation is unchanged) ────
-  // strokesSvg from /api/process has no viewBox and uses absolute plotter mm with
-  // Y pointing up, so injected as-is the browser clipped it to a 300x150px box.
-  // Wrap it in a viewBox around the image and flip Y so the whole image shows,
-  // fitted into the drawing area the same way the G-code fits it.
-  const [imageAspect, setImageAspect] = useState<number | null>(null);
-  useEffect(() => {
-    setImageAspect(null);
-    if (!imageFile) return;
-    let cancelled = false;
-    createImageBitmap(imageFile)
-      .then((bmp) => { if (!cancelled) setImageAspect(bmp.width / bmp.height); bmp.close(); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [imageFile]);
-
-  const previewSvg = useMemo(() => {
-    if (baseLayer.type !== "svg" || !baseLayer.svg) return "";
-    const svg = baseLayer.svg;
-    const openTag = svg.match(/<svg\b[^>]*>/i)?.[0] ?? "";
-    const inner = svg.replace(/^[\s\S]*?<svg\b[^>]*>/i, "").replace(/<\/svg>\s*$/i, "");
-    const wrap = (viewBox: string, content: string) =>
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="display:block">${content}</svg>`;
-
-    const vb = openTag.match(/viewBox\s*=\s*["']([^"']+)["']/i)?.[1];
-    if (vb) return wrap(vb, inner); // auto-trace SVG: already relative, Y down
-
-    // strokesSvg: the API fitted the image (centred, aspect kept) into the settings canvas
-    let x = settings.offset_x, y = settings.offset_y, w = settings.canvas_x, h = settings.canvas_y;
-    if (imageAspect) {
-      const scale = Math.min(w / imageAspect, h);
-      const iw = imageAspect * scale, ih = scale;
-      x += (w - iw) / 2; y += (h - ih) / 2; w = iw; h = ih;
-    }
-    return wrap(`${x} ${-(y + h)} ${w} ${h}`, `<g transform="scale(1,-1)">${inner}</g>`);
-  }, [baseLayer, settings, imageAspect]);
-
   // ── Border render (memoised) ───────────────────────────────────────────────
   const borderResult = useMemo(() => {
     if (border.style === "none") return { svgPaths: [], gcodeLines: [] };
@@ -328,6 +306,29 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     });
     return lines;
   }, []);
+
+  // ── Scale SVG path coordinates from drawing-area centre (for Image Scale slider) ──
+  const applyScaleToSvg = useCallback((svgString: string): string => {
+    if (imageScale === 100) return svgString;
+    const s = imageScale / 100;
+    const cx = drawingArea.x + drawingArea.width / 2;
+    const cy = drawingArea.y + drawingArea.height / 2;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgString, "image/svg+xml");
+    doc.querySelectorAll("path").forEach((path) => {
+      const d = path.getAttribute("d") || "";
+      const pts = parseSvgPathD(d);
+      if (pts.length < 2) return;
+      let newD = "";
+      pts.forEach(([x, y], i) => {
+        const nx = (cx + (x - cx) * s).toFixed(3);
+        const ny = (cy + (y - cy) * s).toFixed(3);
+        newD += i === 0 ? `M${nx},${ny}` : `L${nx},${ny}`;
+      });
+      path.setAttribute("d", newD);
+    });
+    return new XMLSerializer().serializeToString(doc.documentElement);
+  }, [drawingArea, imageScale]);
 
   // ── Generate G-code ────────────────────────────────────────────────────────
   const generateGcode = useCallback(async () => {
@@ -389,23 +390,23 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
           if (res.ok) {
             const result = await res.json();
             if (result.strokesSvg) {
-              lines.push(...svgToGcodeLines(result.strokesSvg, fmt, zDraw, zHop, feedDraw, feedTravel));
+              lines.push(...svgToGcodeLines(applyScaleToSvg(result.strokesSvg), fmt, zDraw, zHop, feedDraw, feedTravel));
             }
           } else {
             // API failed — fall back to existing base layer
             if (baseLayer.type === "svg" && baseLayer.svg) {
-              lines.push(...svgToGcodeLines(baseLayer.svg, fmt, zDraw, zHop, feedDraw, feedTravel));
+              lines.push(...svgToGcodeLines(applyScaleToSvg(baseLayer.svg), fmt, zDraw, zHop, feedDraw, feedTravel));
             }
           }
         } catch {
           // Network error — fall back to existing base layer
           if (baseLayer.type === "svg" && baseLayer.svg) {
-            lines.push(...svgToGcodeLines(baseLayer.svg, fmt, zDraw, zHop, feedDraw, feedTravel));
+            lines.push(...svgToGcodeLines(applyScaleToSvg(baseLayer.svg), fmt, zDraw, zHop, feedDraw, feedTravel));
           }
         }
       } else if (baseLayer.type === "svg" && baseLayer.svg) {
         // No imageFile prop — use the base layer SVG paths directly
-        lines.push(...svgToGcodeLines(baseLayer.svg, fmt, zDraw, zHop, feedDraw, feedTravel));
+        lines.push(...svgToGcodeLines(applyScaleToSvg(baseLayer.svg), fmt, zDraw, zHop, feedDraw, feedTravel));
       }
 
       lines.push("");
@@ -477,7 +478,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     } finally {
       setGenerating(false);
     }
-  }, [textElements, stickerElements, settings, drawingArea, baseLayer, borderResult, imageFile, processParams, svgToGcodeLines, onGcodeReady]);
+  }, [textElements, stickerElements, settings, drawingArea, baseLayer, borderResult, imageFile, processParams, svgToGcodeLines, applyScaleToSvg, onGcodeReady]);
 
   // ── Canvas pixel dimensions ────────────────────────────────────────────────
   const canvasPx = { width: a4.width * pxPerMm, height: a4.height * pxPerMm };
@@ -490,11 +491,11 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex gap-4 w-full">
+    <div className="flex gap-4 w-full min-w-0">
       {/* ── Canvas area ── */}
-      <div className={`flex flex-col gap-3 ${panelCollapsed ? "flex-1" : "w-[65%]"} transition-all duration-200`}>
+      <div ref={canvasColRef} className={`flex flex-col gap-3 min-w-0 ${panelCollapsed ? "flex-1" : "w-[65%]"} transition-all duration-200`}>
         {/* Toolbar */}
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={toggleOrientation}
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.10] text-white/70 hover:bg-white/[0.10] hover:text-white transition-all"
@@ -502,7 +503,31 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
             <RotateCcw size={12} />
             {orientation === "portrait" ? "Portrait" : "Landscape"}
           </button>
-          <span className="text-xs text-white/30">1 mm = {pxPerMm.toFixed(1)} px</span>
+          <button
+            onClick={() => setImageRotation((r) => ((r + 90) % 360) as 0 | 90 | 180 | 270)}
+            title="Rotate image 90°"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.10] text-white/70 hover:bg-white/[0.10] hover:text-white transition-all"
+          >
+            <RotateCw size={12} />
+            {imageRotation}°
+          </button>
+          <button
+            onClick={() => {
+              const newW = settings.canvas_x;
+              const newH = settings.canvas_y;
+              setDrawingArea({ x: settings.offset_x, y: settings.offset_y, width: newW, height: newH });
+              setWidthInput(String(newW));
+              setHeightInput(String(newH));
+              setXInput(String(settings.offset_x));
+              setYInput(String(settings.offset_y));
+            }}
+            title="Fit drawing area to canvas"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.10] text-white/70 hover:bg-white/[0.10] hover:text-white transition-all"
+          >
+            <Maximize2 size={12} />
+            Fit
+          </button>
+          <span className="text-xs text-white/30 ml-1">1mm={pxPerMm.toFixed(1)}px</span>
           <div className="flex-1" />
           <button
             onClick={generateGcode}
@@ -520,30 +545,29 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
           </div>
         )}
 
-        {/* A4 Canvas */}
+        {/* A4 Canvas — wrapped in scrollable container so landscape doesn't overlap controls */}
+        <div className="overflow-auto">
         <div
           ref={canvasRef}
           className="relative bg-white rounded-xl overflow-hidden shadow-2xl shadow-black/40 mx-auto"
           style={{ width: canvasPx.width, height: canvasPx.height }}
           aria-label={`A4 canvas ${orientation}`}
         >
-          {/* Drawing area indicator */}
-          <div
-            className="absolute border-2 border-dashed border-blue-400/50 pointer-events-none"
-            style={{
-              left: daPx.x,
-              top: daPx.y,
-              width: daPx.width,
-              height: daPx.height,
-            }}
-          />
-
-          {/* Base image layer */}
-          {previewSvg && (
+          {/* Base image layer — draggable indirectly via drawing area box */}
+          {baseLayer.type === "svg" && baseLayer.svg && (
             <div
               className="absolute pointer-events-none"
-              style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height }}
-              dangerouslySetInnerHTML={{ __html: previewSvg }}
+              style={{
+                left: daPx.x, top: daPx.y,
+                width: daPx.width, height: daPx.height,
+                overflow: "hidden",
+                transform: [
+                  imageRotation ? `rotate(${imageRotation}deg)` : "",
+                  imageScale !== 100 ? `scale(${(imageScale / 100).toFixed(2)})` : "",
+                ].filter(Boolean).join(" ") || undefined,
+                transformOrigin: "center",
+              }}
+              dangerouslySetInnerHTML={{ __html: baseLayer.svg }}
             />
           )}
           {baseLayer.type === "sketch" && baseLayer.dataUrl && (
@@ -552,9 +576,52 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
               src={baseLayer.dataUrl}
               alt="Base sketch"
               className="absolute object-contain pointer-events-none"
-              style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height }}
+              style={{
+                left: daPx.x, top: daPx.y,
+                width: daPx.width, height: daPx.height,
+                transform: [
+                  imageRotation ? `rotate(${imageRotation}deg)` : "",
+                  imageScale !== 100 ? `scale(${(imageScale / 100).toFixed(2)})` : "",
+                ].filter(Boolean).join(" ") || undefined,
+                transformOrigin: "center",
+              }}
             />
           )}
+
+          {/* Drawing area indicator — draggable to reposition */}
+          <div
+            className="absolute border-2 border-dashed border-blue-400/60 cursor-move"
+            style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height, zIndex: 10 }}
+            title="Drag to reposition drawing area"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              daDragRef.current = {
+                startX: e.clientX,
+                startY: e.clientY,
+                origX: drawingArea.x,
+                origY: drawingArea.y,
+              };
+              const origW = drawingArea.width;
+              const origH = drawingArea.height;
+              const origOri = orientation;
+              const onMove = (me: MouseEvent) => {
+                if (!daDragRef.current) return;
+                const dx = (me.clientX - daDragRef.current.startX) / pxPerMm;
+                const dy = (me.clientY - daDragRef.current.startY) / pxPerMm;
+                const clamped = clampDrawingArea(origW, origH, origOri, daDragRef.current.origX + dx, daDragRef.current.origY + dy);
+                setDrawingArea((prev) => ({ ...prev, x: clamped.x, y: clamped.y }));
+                setXInput(String(Math.round(clamped.x)));
+                setYInput(String(Math.round(clamped.y)));
+              };
+              const onUp = () => {
+                daDragRef.current = null;
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+              };
+              window.addEventListener("mousemove", onMove);
+              window.addEventListener("mouseup", onUp);
+            }}
+          />
 
           {/* Border overlay */}
           {borderResult.svgPaths.length > 0 && (
@@ -639,6 +706,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
             </div>
           ))}
         </div>
+        </div>{/* end overflow-auto wrapper */}
       </div>
 
       {/* ── Controls panel ── */}
@@ -712,6 +780,25 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
                     className="w-full px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.10] text-white text-xs focus:outline-none focus:border-purple-500/50"
                   />
                 </label>
+              </div>
+              <div className="mt-3 flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-white/50">Image Scale: {imageScale}%</span>
+                  <button
+                    onClick={() => setImageScale(100)}
+                    className="text-[10px] text-purple-400/60 hover:text-purple-400 transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <input
+                  type="range" min={50} max={200} step={5} value={imageScale}
+                  onChange={(e) => setImageScale(Number(e.target.value))}
+                  className="w-full accent-purple-500"
+                />
+                <p className="text-[9px] text-white/25">
+                  &gt;100% enlarges image beyond drawing area — edges clip to paper
+                </p>
               </div>
               <p className="text-[9px] text-white/25 mt-2">
                 {drawingArea.x},{drawingArea.y} → {drawingArea.x + drawingArea.width},{drawingArea.y + drawingArea.height} mm
