@@ -293,16 +293,23 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     const lines: string[] = [];
     const parser = new DOMParser();
     const doc = parser.parseFromString(svgString, "image/svg+xml");
+    const strokes: Array<Array<[number, number]>> = [];
     doc.querySelectorAll("path").forEach((path) => {
-      const d = path.getAttribute("d") || "";
-      const pts = parseSvgPathD(d);
-      if (pts.length < 2) return;
+      const pts = parseSvgPathD(path.getAttribute("d") || "");
+      if (pts.length >= 2) strokes.push(pts);
+    });
+    // Short pen lift (0.5mm) when the next stroke starts within 5mm, full Z-hop otherwise
+    const zShort = Math.min(zDraw + 0.5, zHop);
+    strokes.forEach((pts, k) => {
       lines.push(`G0 X${fmt(pts[0][0])} Y${fmt(pts[0][1])} F${feedTravel}`);
       lines.push(`G0 Z${fmt(zDraw)} F${feedTravel}`);
       for (let i = 1; i < pts.length; i++) {
         lines.push(`G1 X${fmt(pts[i][0])} Y${fmt(pts[i][1])} F${feedDraw}`);
       }
-      lines.push(`G0 Z${fmt(zHop)} F${feedTravel}`);
+      const end = pts[pts.length - 1];
+      const next = strokes[k + 1]?.[0];
+      const near = next && Math.hypot(next[0] - end[0], next[1] - end[1]) <= 5;
+      lines.push(`G0 Z${fmt(near ? zShort : zHop)} F${feedTravel}`);
     });
     return lines;
   }, []);

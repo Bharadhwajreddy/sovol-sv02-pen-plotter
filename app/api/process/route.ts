@@ -815,10 +815,28 @@ function generateHatching(
   return strokes;
 }
 
+// ─── Solid-area fill ──────────────────────────────────────────────────────────
+// Centre-line tracing only outlines solid ink (pupils, eyebrows, bindi). Fill
+// those areas with horizontal pen lines every `rowStep` pixel rows, covering
+// each run of ink pixels at least `minRunPx` wide, so they plot solid.
+function fillSolidAreas(binary: Uint8Array, w: number, h: number, rowStep: number, minRunPx: number): Stroke[] {
+  const strokes: Stroke[] = [];
+  for (let y = 0; y < h; y += rowStep) {
+    let x = 0;
+    while (x < w) {
+      if (!binary[y * w + x]) { x++; continue; }
+      const x0 = x;
+      while (x < w && binary[y * w + x]) x++;
+      if (x - x0 >= minRunPx) strokes.push([[x0, y], [x - 1, y]]);
+    }
+  }
+  return strokes;
+}
+
 // ─── Sort strokes by nearest-neighbour to minimize pen travel ────────────────
 // Uses a spatial grid for O(n log n) performance instead of O(n²).
 // Caps at MAX_STROKES to prevent timeout on very complex images.
-const MAX_STROKES = 6000;
+const MAX_STROKES = 20000;
 function sortStrokesByTravel(strokes: Stroke[]): Stroke[] {
   if (strokes.length <= 1) return strokes;
   // Cap stroke count — keep longest strokes (most important features)
@@ -829,19 +847,24 @@ function sortStrokesByTravel(strokes: Stroke[]): Stroke[] {
       .slice(0, MAX_STROKES);
   }
 
-  const used = new Uint8Array(working.length);
+  // Endpoints in flat typed arrays — same greedy search, much faster for large stroke counts
+  const n = working.length;
+  const sxs = new Float64Array(n), sys = new Float64Array(n), exs = new Float64Array(n), eys = new Float64Array(n);
+  for (let j = 0; j < n; j++) {
+    const s = working[j];
+    sxs[j] = s[0][0]; sys[j] = s[0][1];
+    exs[j] = s[s.length - 1][0]; eys[j] = s[s.length - 1][1];
+  }
+  const used = new Uint8Array(n);
   const result: Stroke[] = [];
   let curX = 0, curY = 0;
 
-  for (let i = 0; i < working.length; i++) {
+  for (let i = 0; i < n; i++) {
     let bestIdx = -1, bestDist = Infinity, bestReversed = false;
-    for (let j = 0; j < working.length; j++) {
+    for (let j = 0; j < n; j++) {
       if (used[j]) continue;
-      const s = working[j];
-      const [sx, sy] = s[0];
-      const [ex, ey] = s[s.length - 1];
-      const dStart = (sx-curX)**2 + (sy-curY)**2;
-      const dEnd   = (ex-curX)**2 + (ey-curY)**2;
+      const dStart = (sxs[j]-curX)**2 + (sys[j]-curY)**2;
+      const dEnd   = (exs[j]-curX)**2 + (eys[j]-curY)**2;
       const d = Math.min(dStart, dEnd);
       if (d < bestDist) {
         bestDist = d;
@@ -1338,6 +1361,9 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Post-process ───────────────────────────────────────────────────────
+    // 0.6mm pen: fill solid ink (runs ≥2px wide) with lines every 2px ≈ 0.24mm apart
+    if (is06mm) finalStrokes.push(...fillSolidAreas(binary, imgW, imgH, 2, 2));
+
     const mergedStrokes = mergeNearbyStrokes(finalStrokes, mergeThreshold);
     const sortedStrokes = sortStrokesByTravel(mergedStrokes);
 

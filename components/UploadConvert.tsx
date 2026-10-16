@@ -427,7 +427,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // ── Processing state ─────────────────────────────────────────────────────
-  const [penType, setPenType] = useState<PenType>("2mm");
+  const [penType, setPenType] = useState<PenType>("0.6mm");
   const [drawingMode, setDrawingMode] = useState<DrawingMode>("single");
   const [orientation, setOrientation] = useState<Orientation>("portrait");
   const [detailLevel, setDetailLevel] = useState(8);
