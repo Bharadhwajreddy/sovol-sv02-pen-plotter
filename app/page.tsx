@@ -9,166 +9,91 @@ import SvgToGcode from "@/components/SvgToGcode";
 
 type Tab = "upload" | "svg" | "test" | "settings";
 
+const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: "upload",   label: "Convert",       icon: <Zap size={14} /> },
+  { id: "svg",      label: "SVG → G-code",  icon: <FileCode2 size={14} /> },
+  { id: "test",     label: "Test Patterns", icon: <Grid3X3 size={14} /> },
+  { id: "settings", label: "Settings",      icon: <Settings size={14} /> },
+];
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("upload");
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "upload",   label: "Convert",       icon: <Zap size={13} /> },
-    { id: "svg",      label: "SVG → G-code",  icon: <FileCode2 size={13} /> },
-    { id: "test",     label: "Test Patterns", icon: <Grid3X3 size={13} /> },
-    { id: "settings", label: "Settings",      icon: <Settings size={13} /> },
-  ];
-
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg)" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--ui-bg)" }}>
 
-      {/* ── Ambient background orbs ─────────────────────────────────────── */}
+      {/* ── Ambient background ──────────────────────────────────────────── */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full opacity-[0.07]"
-          style={{ background: "radial-gradient(circle, #8b5cf6 0%, transparent 70%)" }} />
-        <div className="absolute -top-20 right-0 w-[500px] h-[500px] rounded-full opacity-[0.05]"
-          style={{ background: "radial-gradient(circle, #3b82f6 0%, transparent 70%)" }} />
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full opacity-[0.04]"
-          style={{ background: "radial-gradient(circle, #8b5cf6 0%, transparent 70%)" }} />
+        <div className="absolute -top-56 left-1/2 -translate-x-1/2 w-[1100px] h-[560px] rounded-full opacity-[0.16] blur-3xl"
+          style={{ background: "radial-gradient(closest-side, #7c3aed, transparent)" }} />
+        <div className="absolute top-1/3 -right-40 w-[520px] h-[520px] rounded-full opacity-[0.07] blur-3xl"
+          style={{ background: "radial-gradient(closest-side, #3b82f6, transparent)" }} />
       </div>
 
-      {/* ── Sticky Header ─────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 border-b"
-        style={{ borderColor: "var(--border)", background: "rgba(3,3,5,0.85)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)" }}>
-        <div className="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between gap-4">
+        style={{ borderColor: "var(--ui-line)", background: "rgba(7,7,11,0.78)", backdropFilter: "blur(18px) saturate(140%)", WebkitBackdropFilter: "blur(18px) saturate(140%)" }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
 
-          {/* Logo */}
+          {/* Brand */}
           <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="relative w-8 h-8 flex-shrink-0">
-              <div className="absolute inset-0 rounded-xl opacity-60 blur-md"
-                style={{ background: "linear-gradient(135deg, #8b5cf6, #3b82f6)" }} />
-              <div className="relative w-8 h-8 rounded-xl flex items-center justify-center shadow-lg"
-                style={{ background: "linear-gradient(135deg, #7c3aed, #2563eb)" }}>
-                <Pen size={14} className="text-white" />
-              </div>
+            <div className="relative w-9 h-9 rounded-xl grid place-items-center shadow-lg shadow-purple-900/40"
+              style={{ background: "linear-gradient(135deg, #8b5cf6, #4f46e5)" }}>
+              <Pen size={16} className="text-white" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#07070b]" />
             </div>
-            <div className="hidden sm:block">
-              <h1 className="text-white font-bold text-sm leading-none tracking-tight">PlotterAI</h1>
-              <p className="text-[10px] mt-0.5 font-mono" style={{ color: "var(--text-muted)" }}>
-                Sketch → G-code · Sovol SV02
-              </p>
+            <div className="leading-tight">
+              <h1 className="text-white font-extrabold text-[15px] tracking-tight">PlotterAI</h1>
+              <p className="text-[11px] font-medium" style={{ color: "var(--ui-text-3)" }}>Sketch → G-code · Sovol SV02</p>
             </div>
           </div>
 
-          {/* Nav Tabs */}
-          <nav className="flex items-center gap-0.5 rounded-xl p-1 border"
-            style={{ background: "rgba(255,255,255,0.03)", borderColor: "var(--border)" }}>
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                  activeTab === tab.id
-                    ? "text-white shadow-sm"
-                    : "hover:text-white/70"
-                }`}
-                style={activeTab === tab.id ? {
-                  background: "linear-gradient(135deg, rgba(124,58,237,0.7), rgba(37,99,235,0.7))",
-                  boxShadow: "0 1px 8px rgba(139,92,246,0.25)",
-                  color: "white",
-                } : { color: "rgba(255,255,255,0.35)" }}
-              >
-                {tab.icon}
-                <span className="hidden sm:inline">{tab.label}</span>
+          {/* Desktop nav */}
+          <nav className="hidden md:flex ui-seg" role="tablist" aria-label="Sections">
+            {TABS.map((tab) => (
+              <button key={tab.id} role="tab" aria-selected={activeTab === tab.id}
+                onClick={() => setActiveTab(tab.id)} className="ui-seg-btn !px-4">
+                {tab.icon}{tab.label}
               </button>
             ))}
           </nav>
 
-          {/* Version badge */}
-          <div className="hidden sm:flex items-center">
-            <span className="text-[10px] font-mono px-2.5 py-1 rounded-full border"
-              style={{ color: "var(--text-muted)", background: "rgba(255,255,255,0.03)", borderColor: "var(--border)" }}>
-              v3.0
-            </span>
-          </div>
+          <span className="hidden sm:inline-flex ui-badge">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            SV02 · Marlin
+          </span>
         </div>
+
+        {/* Mobile nav */}
+        <nav className="md:hidden ui-scroll-x border-t px-3 py-2" style={{ borderColor: "var(--ui-line)" }} role="tablist" aria-label="Sections">
+          <div className="flex gap-1.5 w-max">
+            {TABS.map((tab) => (
+              <button key={tab.id} role="tab" aria-selected={activeTab === tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`ui-btn ui-btn-sm ${activeTab === tab.id ? "!text-white !bg-white/10 !border-white/15" : ""}`}>
+                {tab.icon}{tab.label}
+              </button>
+            ))}
+          </div>
+        </nav>
       </header>
 
-      {/* ── Hero Banner (Convert tab only) ────────────────────────────────── */}
-      {activeTab === "upload" && (
-        <div className="relative overflow-hidden border-b" style={{ borderColor: "var(--border)" }}>
-          {/* Grid */}
-          <div className="absolute inset-0 hero-grid opacity-100" />
-
-          {/* Gradient fade at bottom */}
-          <div className="absolute bottom-0 left-0 right-0 h-24 pointer-events-none"
-            style={{ background: "linear-gradient(to bottom, transparent, var(--bg))" }} />
-
-          <div className="relative max-w-6xl mx-auto px-5 py-14">
-            <div className="flex flex-col items-center text-center gap-6">
-
-              {/* Icon cluster */}
-              <div className="flex items-center gap-5 mb-1">
-                {[
-                  { src: "/icons/pen-nib.svg", delay: "0s", color: "rgba(139,92,246,0.15)" },
-                  { src: "/icons/upload-3d.svg", delay: "0.4s", color: "rgba(59,130,246,0.15)" },
-                  { src: "/icons/gcode-chip.svg", delay: "0.8s", color: "rgba(139,92,246,0.15)" },
-                  { src: "/icons/robot-arm.svg", delay: "1.2s", color: "rgba(59,130,246,0.15)" },
-                  { src: "/icons/download-arrow.svg", delay: "1.6s", color: "rgba(139,92,246,0.15)" },
-                ].map(({ src, delay, color }) => (
-                  <div key={src} className="animate-float w-11 h-11 rounded-2xl flex items-center justify-center border"
-                    style={{ animationDelay: delay, background: color, borderColor: "rgba(255,255,255,0.08)" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={src} alt="" className="w-6 h-6 opacity-80" />
-                  </div>
-                ))}
-              </div>
-
-              {/* Headline */}
-              <div className="space-y-3">
-                <h2 className="text-4xl sm:text-5xl font-black tracking-tight text-white leading-[1.1]">
-                  Turn Sketches Into{" "}
-                  <span className="gradient-text-purple">Plotter Art</span>
-                </h2>
-                <p className="text-base max-w-lg mx-auto leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                  Upload any sketch and get perfect G-code for your Sovol SV02 in seconds
-                </p>
-              </div>
-
-              {/* Feature pills */}
-              <div className="flex items-center gap-2 flex-wrap justify-center">
-                {[
-                  { label: "2 Pen Types", color: "text-purple-400", bg: "rgba(139,92,246,0.1)", border: "rgba(139,92,246,0.2)" },
-                  { label: "3 Drawing Modes", color: "text-blue-400", bg: "rgba(59,130,246,0.1)", border: "rgba(59,130,246,0.2)" },
-                  { label: "100% Faithful", color: "text-emerald-400", bg: "rgba(16,185,129,0.1)", border: "rgba(16,185,129,0.2)" },
-                  { label: "Sovol SV02 Ready", color: "text-amber-400", bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.2)" },
-                ].map(({ label, color, bg, border }) => (
-                  <span key={label}
-                    className={`text-xs font-semibold px-3.5 py-1.5 rounded-full border ${color}`}
-                    style={{ background: bg, borderColor: border }}>
-                    {label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Main Content ──────────────────────────────────────────────────── */}
-      <main className="max-w-6xl mx-auto px-5 py-10">
+      {/* ── Main ────────────────────────────────────────────────────────── */}
+      <main className="relative flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
         {activeTab === "upload"   && <UploadConvert />}
         {activeTab === "svg"      && <SvgToGcode />}
         {activeTab === "test"     && <TestPatterns />}
         {activeTab === "settings" && <SettingsPanel />}
       </main>
 
-      {/* ── Footer ────────────────────────────────────────────────────────── */}
-      <footer className="border-t mt-20" style={{ borderColor: "var(--border)" }}>
-        <div className="max-w-6xl mx-auto px-5 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Pen size={13} style={{ color: "var(--text-muted)" }} />
-            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-              PlotterAI — Sovol SV02 Pen Plotter Tool
-            </span>
-          </div>
-          <span className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>
-            G21 · G90 · G28 X Y
+      {/* ── Footer ──────────────────────────────────────────────────────── */}
+      <footer className="relative border-t" style={{ borderColor: "var(--ui-line)" }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <span className="text-xs" style={{ color: "var(--ui-text-3)" }}>
+            PlotterAI — pen plotting for the Sovol SV02
+          </span>
+          <span className="text-[11px] font-mono" style={{ color: "var(--ui-text-3)" }}>
+            G21 · G90 · G28 X Y · never homes Z
           </span>
         </div>
       </footer>

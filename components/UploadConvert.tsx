@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
-  ImageIcon, Download, Loader2, AlertCircle,
-  CheckCircle2, Layers, Pen, LayoutGrid,
-  Copy, ChevronDown, ChevronUp, Zap, RotateCw, ScanLine,
-  Sparkles, FileCode2, Clock, Ruler, ArrowRight,
+  ImagePlus, Upload, Download, Loader2, AlertCircle, CheckCircle2, Check,
+  Layers, Pen, LayoutGrid, Copy, ChevronDown, ChevronUp, RefreshCw, Trash2,
+  Sparkles, FileCode2, FileImage, Ruler, Route, Timer, PenTool, Printer,
+  ArrowLeft, Wand2, SlidersHorizontal, RectangleVertical, RectangleHorizontal,
 } from "lucide-react";
+import GcodePreview, { parseGcode, formatDuration, formatDistance } from "@/components/GcodePreview";
 import { PROMPT_2MM, PROMPT_06MM } from "@/lib/prompts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -36,34 +37,15 @@ const DEFAULT_SETTINGS: PlotterSettings = {
   canvasX: 200, canvasY: 160, offsetX: 20, offsetY: 40,
 };
 
-const DRAWING_MODES: { id: DrawingMode; label: string; icon: React.ReactNode; desc: string; badge: string; badgeColor: string; accentColor: string }[] = [
-  {
-    id: "single",
-    label: "Single",
-    icon: <Pen size={14} />,
-    desc: "One centerline per feature. Fastest output.",
-    badge: "Fast",
-    badgeColor: "text-emerald-400",
-    accentColor: "rgba(16,185,129,0.12)",
-  },
-  {
-    id: "multi",
-    label: "Multi",
-    icon: <Layers size={14} />,
-    desc: "Parallel passes for stroke weight.",
-    badge: "2× slower",
-    badgeColor: "text-blue-400",
-    accentColor: "rgba(59,130,246,0.12)",
-  },
-  {
-    id: "shading",
-    label: "Shading",
-    icon: <LayoutGrid size={14} />,
-    desc: "Hatching fills dark areas.",
-    badge: "4× slower",
-    badgeColor: "text-amber-400",
-    accentColor: "rgba(245,158,11,0.12)",
-  },
+const PEN_OPTIONS: { id: PenType; label: string; desc: string; badge?: string }[] = [
+  { id: "0.6mm", label: "0.6 mm fine liner", desc: "Maximum detail — eyes, eyebrows and dark areas are filled solid.", badge: "Recommended" },
+  { id: "2mm", label: "2 mm marker", desc: "Bold, clean outlines. Fewer strokes, faster plots." },
+];
+
+const DRAWING_MODES: { id: DrawingMode; label: string; icon: React.ReactNode; desc: string; badge: string; badgeClass: string }[] = [
+  { id: "single",  label: "Single",  icon: <Pen size={15} />,        desc: "One crisp line per feature",          badge: "Fastest",   badgeClass: "ui-badge-ok" },
+  { id: "multi",   label: "Multi",   icon: <Layers size={15} />,     desc: "Extra passes where lines are thicker", badge: "≈ 2× time", badgeClass: "ui-badge-blue" },
+  { id: "shading", label: "Shading", icon: <LayoutGrid size={15} />, desc: "Adds hatching in dark areas",          badge: "≈ 4× time", badgeClass: "ui-badge-warn" },
 ];
 
 // ─── SVG direct passthrough (module-level) ───────────────────────────────────
@@ -317,38 +299,72 @@ async function clientSideAutoTrace(f: File, canvasX: number, canvasY: number): P
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasX} ${canvasY}" width="100%" height="100%">${paths.join("")}</svg>`;
 }
 
-function formatTime(s: number) {
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60), r = s % 60;
-  return r > 0 ? `${m}m ${r}s` : `${m}m`;
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+function formatBytes(b: number) {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// ─── Section Label ────────────────────────────────────────────────────────────
-function SectionLabel({ num, label, gradient }: { num: number; label: string; gradient: string }) {
+const PROCESS_STEPS = [
+  "Reading your image…",
+  "Finding every line…",
+  "Tracing centre-lines…",
+  "Filling solid areas…",
+  "Planning the pen path…",
+];
+
+// ─── Stepper ──────────────────────────────────────────────────────────────────
+const STEPS = ["Image", "Settings", "Layout", "Export"];
+
+function Stepper({ current, onStep }: { current: number; onStep: (i: number) => void }) {
   return (
-    <div className="flex items-center gap-3 mb-5">
-      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black text-white flex-shrink-0"
-        style={{ background: gradient }}>
-        {num}
-      </div>
-      <span className="text-sm font-bold text-white tracking-tight">{label}</span>
-      <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
-    </div>
+    <ol className="ui-steps ui-scroll-x" aria-label="Progress">
+      {STEPS.map((label, i) => {
+        const state = i < current ? "done" : i === current ? "current" : "todo";
+        const clickable = i < current;
+        return (
+          <li key={label} className="flex items-center gap-1.5 flex-1 last:flex-none min-w-0">
+            <button type="button" className="ui-step" data-state={state} disabled={!clickable}
+              onClick={() => clickable && onStep(i)} aria-current={state === "current" ? "step" : undefined}>
+              <span className="ui-step-dot">{state === "done" ? <Check size={13} strokeWidth={3} /> : i + 1}</span>
+              <span className="hidden sm:inline">{label}</span>
+            </button>
+            {i < STEPS.length - 1 && <span className="ui-step-line" data-done={i < current} />}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
-// ─── Card wrapper ─────────────────────────────────────────────────────────────
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+// ─── Slider with value pill ───────────────────────────────────────────────────
+function Slider({ label, value, min, max, onChange, left, right, hint }: {
+  label: string; value: number; min: number; max: number; onChange: (v: number) => void;
+  left?: string; right?: string; hint?: string;
+}) {
+  const fill = ((value - min) / (max - min)) * 100;
   return (
-    <div className={`rounded-2xl border overflow-hidden ${className}`}
-      style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-      {children}
-    </div>
+    <label className="block">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[13px] font-semibold text-white/85">{label}</span>
+        <span className="ui-value">{value}</span>
+      </div>
+      <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))}
+        className="ui-range" style={{ ["--fill" as string]: `${fill}%` }} aria-label={label} />
+      {(left || right) && (
+        <div className="flex justify-between mt-1 text-[11px]" style={{ color: "var(--ui-text-3)" }}>
+          <span>{left}</span><span>{right}</span>
+        </div>
+      )}
+      {hint && <p className="ui-hint mt-1.5">{hint}</p>}
+    </label>
   );
 }
 
 // ─── Prompt Panel ─────────────────────────────────────────────────────────────
 function PromptPanel({ penType }: { penType: PenType }) {
+  const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const prompt = penType === "2mm" ? PROMPT_2MM : PROMPT_06MM;
@@ -364,60 +380,50 @@ function PromptPanel({ penType }: { penType: PenType }) {
   };
 
   return (
-    <Card>
-      <div className="px-5 py-4 flex items-center justify-between border-b"
-        style={{ borderColor: "var(--border)" }}>
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{ background: is2mm ? "rgba(59,130,246,0.12)" : "rgba(245,158,11,0.12)" }}>
-            <Sparkles size={15} className={is2mm ? "text-blue-400" : "text-amber-400"} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-sm font-bold text-white">
-                {is2mm ? "ChatGPT Prompt — 2mm Caricature" : "ChatGPT Prompt — 0.6mm Portrait"}
-              </p>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
-                style={is2mm
-                  ? { color: "#60a5fa", background: "rgba(59,130,246,0.1)", borderColor: "rgba(59,130,246,0.2)" }
-                  : { color: "#fbbf24", background: "rgba(245,158,11,0.1)", borderColor: "rgba(245,158,11,0.2)" }}>
-                Optimized for pen plotting
-              </span>
-            </div>
-            <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-              {is2mm ? "Bold clean lines for caricature style" : "Exact fine-line replication for portraits"}
-            </p>
-          </div>
+    <section className="ui-panel overflow-hidden">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-white/[0.02] transition-colors">
+        <div className="w-10 h-10 rounded-xl grid place-items-center flex-shrink-0"
+          style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.18), rgba(139,92,246,0.18))" }}>
+          <Sparkles size={17} className="text-amber-300" />
         </div>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-2 text-xs px-3.5 py-2 rounded-xl font-semibold transition-all border flex-shrink-0"
-          style={copied
-            ? { background: "rgba(16,185,129,0.12)", color: "#34d399", borderColor: "rgba(16,185,129,0.25)" }
-            : { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.5)", borderColor: "var(--border)" }}>
-          {copied ? <CheckCircle2 size={12} /> : <Copy size={12} />}
-          {copied ? "Copied!" : "Copy"}
-        </button>
-      </div>
+        <div className="flex-1 min-w-0">
+          <p className="ui-title">Starting from a photo? Turn it into a clean sketch first</p>
+          <p className="ui-hint mt-0.5">
+            Copy this ChatGPT prompt, attach your photo, then upload the sketch it returns.
+            {" "}Tuned for the {is2mm ? "2 mm marker (bold caricature)" : "0.6 mm fine liner (detailed portrait)"}.
+          </p>
+        </div>
+        <ChevronDown size={18} className={`flex-shrink-0 text-white/40 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
 
-      <div className="p-5">
-        <div className="rounded-xl p-4 border" style={{ background: "rgba(0,0,0,0.3)", borderColor: "rgba(255,255,255,0.04)" }}>
-          <pre className="text-xs font-mono leading-relaxed whitespace-pre-wrap break-words"
-            style={{ color: "rgba(255,255,255,0.45)" }}>
-            {expanded ? prompt : lines.slice(0, 4).join("\n") + (lines.length > 4 ? "\n..." : "")}
-          </pre>
+      {open && (
+        <div className="px-5 pb-5 ui-pop">
+          <div className="relative rounded-xl border" style={{ background: "rgba(0,0,0,0.35)", borderColor: "var(--ui-line)" }}>
+            <button onClick={handleCopy}
+              className={`ui-btn ui-btn-sm absolute top-3 right-3 ${copied ? "!text-emerald-300 !border-emerald-500/30 !bg-emerald-500/10" : ""}`}>
+              {copied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
+              {copied ? "Copied" : "Copy prompt"}
+            </button>
+            <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words p-4 pr-36"
+              style={{ color: "rgba(255,255,255,0.55)" }}>
+              {expanded ? prompt : lines.slice(0, 6).join("\n") + (lines.length > 6 ? "\n…" : "")}
+            </pre>
+          </div>
+          {lines.length > 6 && (
+            <button onClick={() => setExpanded((v) => !v)} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-violet-300 hover:text-violet-200">
+              {expanded ? <><ChevronUp size={13} />Show less</> : <><ChevronDown size={13} />Show the full prompt</>}
+            </button>
+          )}
         </div>
-        {lines.length > 4 && (
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="mt-3 flex items-center gap-1.5 text-xs font-semibold transition-colors"
-            style={{ color: "#a78bfa" }}>
-            {expanded ? <><ChevronUp size={12} />Hide prompt</> : <><ChevronDown size={12} />Show full prompt</>}
-          </button>
-        )}
-      </div>
-    </Card>
+      )}
+    </section>
   );
+}
+
+// ─── Orientation glyphs ───────────────────────────────────────────────────────
+function OrientationIcon({ o }: { o: Orientation }) {
+  return o === "portrait" ? <RectangleVertical size={15} /> : <RectangleHorizontal size={15} />;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -593,153 +599,267 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   };
 
   // ─────────────────────────────────────────────────────────────────────────
+  // UI-only state & helpers (no effect on processing or G-code)
+  // ─────────────────────────────────────────────────────────────────────────
+  const [dragging, setDragging] = useState(false);
+  const [imgMeta, setImgMeta] = useState<{ w: number; h: number } | null>(null);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [downloaded, setDownloaded] = useState(false);
+
+  useEffect(() => {
+    if (!processing) { setStepIdx(0); return; }
+    const t = setInterval(() => setStepIdx((i) => Math.min(i + 1, PROCESS_STEPS.length - 1)), 1800);
+    return () => clearInterval(t);
+  }, [processing]);
+
+  useEffect(() => { if (stage !== "download") setDownloaded(false); }, [stage, gcodeResult]);
+
+  const parsedGcode = useMemo(() => (gcodeResult ? parseGcode(gcodeResult.gcode) : null), [gcodeResult]);
+
+  const currentStep = stage === "download" ? 3 : stage === "composer" ? 2 : file ? 1 : 0;
+  const goToStep = (i: number) => {
+    if (i <= 1) setStage("upload");
+    else if (i === 2) setStage("composer");
+  };
+
+  const resetAll = () => {
+    setStage("upload"); setFile(null); setPreviewUrl(null); setGcodeResult(null);
+    setAutoTraceSvg(null); setProcessResult(null); setImgMeta(null); setProcessError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const HEADINGS = [
+    { title: "Turn a sketch into plotter art", sub: "Upload a line drawing or sketch — every detail is traced into G-code for your Sovol SV02." },
+    { title: "Fine-tune the drawing", sub: "Choose your pen, style and detail level, then convert." },
+    { title: "Lay out the page", sub: "Position the drawing on the paper and add a border, text or stickers." },
+    { title: "Ready to plot", sub: "Check the toolpath preview — it's exactly what the pen will draw — then download." },
+  ];
+
+  const isSvgFile = !!file && (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg"));
+
+  // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
+    <div className="flex flex-col gap-6 sm:gap-8 w-full">
 
-      {/* ── Stage: Upload ── */}
+      {/* ── Heading + progress ── */}
+      <div className="flex flex-col xl:flex-row xl:items-end gap-5 justify-between">
+        <div className="min-w-0" key={currentStep}>
+          <h2 className="ui-pop text-[26px] sm:text-[32px] leading-tight font-extrabold tracking-tight text-white">
+            {HEADINGS[currentStep].title}
+          </h2>
+          <p className="ui-pop mt-1.5 text-sm sm:text-[15px] max-w-2xl" style={{ color: "var(--ui-text-2)" }}>
+            {HEADINGS[currentStep].sub}
+          </p>
+        </div>
+        <div className="xl:w-[560px] flex-shrink-0">
+          <Stepper current={currentStep} onStep={goToStep} />
+        </div>
+      </div>
+
+      {/* ── Stage: Upload & settings ── */}
       {stage === "upload" && (
-        <div className="flex flex-col lg:flex-row gap-6">
+        <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(340px,1fr)] gap-6 items-start">
 
-          {/* Canvas-first: upload area takes 65% on desktop */}
-          <div className="flex flex-col gap-5 lg:w-[65%]">
-            <SectionLabel num={1} label="Upload Image" gradient="linear-gradient(135deg,#7c3aed,#2563eb)" />
+          {/* Left: image */}
+          <div className="flex flex-col gap-4 min-w-0">
+            <div
+              className={`ui-drop overflow-hidden ${previewUrl ? "" : "cursor-pointer"}`}
+              data-drag={dragging}
+              onDrop={(e) => { setDragging(false); handleDrop(e); }}
+              onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}
+              onClick={() => { if (!previewUrl) fileInputRef.current?.click(); }}
+              role={previewUrl ? undefined : "button"}
+              tabIndex={previewUrl ? undefined : 0}
+              onKeyDown={(e) => { if (!previewUrl && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); fileInputRef.current?.click(); } }}
+              aria-label={previewUrl ? undefined : "Upload an image"}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp,image/svg+xml,.svg"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setImgMeta(null); handleFile(f); } }}
+              />
 
-            {/* Upload zone */}
-            <Card>
-              <div
-                className="p-8 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all"
-                style={{ minHeight: 220 }}
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {previewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={previewUrl} alt="Preview" className="max-h-48 max-w-full rounded-xl object-contain" />
-                ) : (
-                  <>
-                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                      style={{ background: "rgba(124,58,237,0.12)" }}>
-                      <ImageIcon size={24} className="text-purple-400" />
+              {!previewUrl ? (
+                <div className="flex flex-col items-center justify-center text-center px-6 py-14 sm:py-20 min-h-[340px] sm:min-h-[460px]">
+                  <div className="relative mb-6">
+                    <div className="absolute inset-0 rounded-3xl blur-2xl opacity-60" style={{ background: "linear-gradient(135deg,#8b5cf6,#3b82f6)" }} />
+                    <div className="relative w-20 h-20 rounded-3xl grid place-items-center border border-white/15"
+                      style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.9), rgba(79,70,229,0.9))" }}>
+                      <ImagePlus size={34} className="text-white" />
                     </div>
-                    <div className="text-center">
-                      <p className="text-sm font-semibold text-white">Drop image here or click to browse</p>
-                      <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>JPEG, PNG, WEBP, SVG accepted</p>
+                  </div>
+                  <p className="text-xl font-bold text-white tracking-tight">{dragging ? "Drop it here" : "Drop your sketch here"}</p>
+                  <p className="mt-1.5 text-sm" style={{ color: "var(--ui-text-2)" }}>or</p>
+                  <span className="ui-btn ui-btn-primary mt-3 pointer-events-none">
+                    <Upload size={15} /> Choose an image
+                  </span>
+                  <p className="mt-4 text-xs" style={{ color: "var(--ui-text-3)" }}>JPEG · PNG · WEBP · SVG</p>
+
+                  <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full max-w-xl text-left">
+                    {[
+                      { t: "Black lines on white", d: "Line art & sketches trace best" },
+                      { t: "1000 px or larger", d: "More pixels, finer detail" },
+                      { t: "Plain background", d: "No shadows or paper texture" },
+                    ].map((tip) => (
+                      <div key={tip.t} className="rounded-xl px-3.5 py-3 border" style={{ borderColor: "var(--ui-line)", background: "rgba(0,0,0,0.25)" }}>
+                        <p className="text-[12.5px] font-semibold text-white/85 flex items-center gap-1.5"><Check size={13} className="text-emerald-400" />{tip.t}</p>
+                        <p className="text-[11.5px] mt-0.5" style={{ color: "var(--ui-text-3)" }}>{tip.d}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col">
+                  {/* File bar */}
+                  <div className="flex items-center gap-3 px-4 sm:px-5 py-3.5 border-b" style={{ borderColor: "var(--ui-line)", background: "rgba(0,0,0,0.25)" }}>
+                    <div className="w-9 h-9 rounded-lg grid place-items-center flex-shrink-0" style={{ background: "var(--ui-accent-soft)" }}>
+                      <FileImage size={16} className="text-violet-300" />
                     </div>
-                  </>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/jpg,image/png,image/webp,image/svg+xml,.svg"
-                  className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-                />
-              </div>
-            </Card>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-white truncate">{file?.name ?? "Image"}</p>
+                      <p className="text-[11.5px]" style={{ color: "var(--ui-text-3)" }}>
+                        {[imgMeta ? `${imgMeta.w} × ${imgMeta.h} px` : null, file ? formatBytes(file.size) : null, isSvgFile ? "Vector — traced exactly" : null].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                    <button type="button" className="ui-btn ui-btn-sm" disabled={processing}
+                      onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+                      <RefreshCw size={13} /><span className="hidden sm:inline">Replace</span>
+                    </button>
+                    <button type="button" className="ui-btn ui-btn-sm ui-btn-ghost" disabled={processing} aria-label="Remove image"
+                      onClick={(e) => { e.stopPropagation(); resetAll(); }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+
+                  {/* Preview */}
+                  <div className="ui-stage !rounded-none !border-0 p-4 sm:p-8 flex items-center justify-center min-h-[320px] sm:min-h-[480px]">
+                    <div className="ui-paper relative overflow-hidden p-2 sm:p-3 max-w-full">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={previewUrl} alt="Uploaded image preview"
+                        onLoad={(e) => setImgMeta({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+                        className={`block max-h-[300px] sm:max-h-[520px] w-auto max-w-full object-contain transition-[filter] duration-300 ${processing ? "saturate-0 opacity-80" : ""}`} />
+                      {processing && <div className="ui-scanline" />}
+                    </div>
+                  </div>
+
+                  {processing && (
+                    <div className="flex items-center gap-3 px-5 py-3.5 border-t" style={{ borderColor: "var(--ui-line)", background: "rgba(139,92,246,0.08)" }} aria-live="polite">
+                      <Loader2 size={16} className="animate-spin text-violet-300 flex-shrink-0" />
+                      <p className="text-sm font-semibold text-white/90">{PROCESS_STEPS[stepIdx]}</p>
+                      <span className="ml-auto text-xs" style={{ color: "var(--ui-text-3)" }}>usually 5–15 s</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {processError && (
-              <div className="flex items-center gap-3 px-4 py-3 rounded-xl border"
-                style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }}>
-                <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
-                <p className="text-xs text-red-300">{processError}</p>
+              <div role="alert" className="flex items-start gap-3 px-4 py-3.5 rounded-xl border"
+                style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.25)" }}>
+                <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-200">{processError}</p>
               </div>
             )}
           </div>
 
-          {/* Controls panel: 35% on desktop */}
-          <div className="flex flex-col gap-5 lg:flex-1">
-            <SectionLabel num={2} label="Settings" gradient="linear-gradient(135deg,#2563eb,#7c3aed)" />
-
-            <>
-                {/* Pen type */}
-                <Card>
-                  <div className="px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
-                    <p className="text-xs font-bold text-white/60 uppercase tracking-wider">Pen Type</p>
-                  </div>
-                  <div className="p-4 flex gap-2">
-                    {(["2mm", "0.6mm"] as PenType[]).map((p) => (
-                      <button key={p} onClick={() => setPenType(p)}
-                        className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${penType === p ? "bg-purple-500/20 text-purple-300 border-purple-500/30" : "bg-white/[0.04] text-white/50 border-white/[0.08] hover:text-white/80"}`}>
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </Card>
-
-                {/* Drawing mode */}
-                <Card>
-                  <div className="px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
-                    <p className="text-xs font-bold text-white/60 uppercase tracking-wider">Drawing Mode</p>
-                  </div>
-                  <div className="p-4 flex flex-col gap-2">
-                    {DRAWING_MODES.map((m) => (
-                      <button key={m.id} onClick={() => setDrawingMode(m.id)}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${drawingMode === m.id ? "border-purple-500/30" : "border-white/[0.06] hover:border-white/[0.12]"}`}
-                        style={{ background: drawingMode === m.id ? m.accentColor : "transparent" }}>
-                        <span className={drawingMode === m.id ? "text-purple-300" : "text-white/40"}>{m.icon}</span>
-                        <div className="flex-1">
-                          <p className="text-xs font-semibold text-white">{m.label}</p>
-                          <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>{m.desc}</p>
-                        </div>
-                        <span className={`text-[10px] font-semibold ${m.badgeColor}`}>{m.badge}</span>
-                      </button>
-                    ))}
-                  </div>
-                </Card>
-
-                {/* Detail & stroke */}
-                <Card>
-                  <div className="p-4 flex flex-col gap-3">
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[10px] text-white/40">Detail Level: {detailLevel}</span>
-                      <input type="range" min={1} max={10} value={detailLevel}
-                        onChange={(e) => setDetailLevel(Number(e.target.value))}
-                        className="w-full accent-purple-500" />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[10px] text-white/40">Stroke Weight: {strokeWeight}</span>
-                      <input type="range" min={1} max={5} value={strokeWeight}
-                        onChange={(e) => setStrokeWeight(Number(e.target.value))}
-                        className="w-full accent-purple-500" />
-                    </label>
-                  </div>
-                </Card>
-            </>
-
-            {/* Orientation */}
-            <Card>
-              <div className="p-4 flex gap-2">
-                {(["portrait", "landscape"] as Orientation[]).map((o) => (
-                  <button key={o} onClick={() => setOrientation(o)}
-                    className={`flex-1 py-2 rounded-xl text-xs font-semibold border capitalize transition-all ${orientation === o ? "bg-blue-500/20 text-blue-300 border-blue-500/30" : "bg-white/[0.04] text-white/50 border-white/[0.08] hover:text-white/80"}`}>
-                    {o}
-                  </button>
-                ))}
+          {/* Right: settings */}
+          <aside className="ui-panel lg:sticky lg:top-24 overflow-hidden min-w-0">
+            <div className="ui-panel-head">
+              <div className="flex items-center gap-2.5">
+                <SlidersHorizontal size={16} className="text-violet-300" />
+                <span className="ui-title">Drawing settings</span>
               </div>
-            </Card>
+              {isSvgFile && <span className="ui-badge ui-badge-blue">SVG — used as-is</span>}
+            </div>
 
-            {/* Process button */}
-            {file && (
-              <button
-                onClick={processAiSketch}
-                disabled={processing}
-                className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-black text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 hover:scale-[1.02]"
-                style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}>
-                {processing ? <><Loader2 size={14} className="animate-spin" />Processing…</> : <><Zap size={14} />Convert to G-code</>}
+            <fieldset disabled={processing} className="contents">
+              {/* Pen */}
+              <div className="ui-section">
+                <p className="ui-eyebrow mb-3">Pen</p>
+                <div className="flex flex-col gap-2" role="radiogroup" aria-label="Pen">
+                  {PEN_OPTIONS.map((p) => (
+                    <button key={p.id} type="button" role="radio" aria-checked={penType === p.id}
+                      onClick={() => setPenType(p.id)} className="ui-option">
+                      <span className="ui-radio" />
+                      <span className="flex-1 min-w-0">
+                        <span className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[13.5px] font-semibold text-white">{p.label}</span>
+                          {p.badge && <span className="ui-badge ui-badge-accent">{p.badge}</span>}
+                        </span>
+                        <span className="block text-[12px] mt-0.5" style={{ color: "var(--ui-text-3)" }}>{p.desc}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Style */}
+              <div className="ui-section">
+                <p className="ui-eyebrow mb-3">Drawing style</p>
+                <div className="flex flex-col gap-2" role="radiogroup" aria-label="Drawing style">
+                  {DRAWING_MODES.map((m) => (
+                    <button key={m.id} type="button" role="radio" aria-checked={drawingMode === m.id}
+                      onClick={() => setDrawingMode(m.id)} className="ui-option !items-center">
+                      <span className={`w-8 h-8 rounded-lg grid place-items-center flex-shrink-0 ${drawingMode === m.id ? "text-violet-200" : "text-white/45"}`}
+                        style={{ background: drawingMode === m.id ? "rgba(139,92,246,0.22)" : "rgba(255,255,255,0.05)" }}>
+                        {m.icon}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[13.5px] font-semibold text-white">{m.label}</span>
+                        <span className="block text-[12px]" style={{ color: "var(--ui-text-3)" }}>{m.desc}</span>
+                      </span>
+                      <span className={`ui-badge ${m.badgeClass}`}>{m.badge}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Detail */}
+              <div className="ui-section flex flex-col gap-5">
+                <Slider label="Detail level" value={detailLevel} min={1} max={10} onChange={setDetailLevel}
+                  left="Cleaner" right="Finer detail" />
+                <Slider label="Stroke weight" value={strokeWeight} min={1} max={5} onChange={setStrokeWeight}
+                  left="Light" right="Heavy" hint="Used by the Multi and Shading styles." />
+              </div>
+
+              {/* Orientation */}
+              <div className="ui-section">
+                <p className="ui-eyebrow mb-3">Paper orientation</p>
+                <div className="ui-seg">
+                  {(["portrait", "landscape"] as Orientation[]).map((o) => (
+                    <button key={o} type="button" aria-pressed={orientation === o} onClick={() => setOrientation(o)}
+                      className="ui-seg-btn capitalize">
+                      <OrientationIcon o={o} />{o}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </fieldset>
+
+            {/* Action */}
+            <div className="ui-section" style={{ background: "rgba(0,0,0,0.2)" }}>
+              <button onClick={processAiSketch} disabled={!file || processing} className="ui-btn ui-btn-primary ui-btn-lg w-full">
+                {processing ? <><Loader2 size={17} className="animate-spin" />Converting…</> : <><Wand2 size={17} />Convert to G-code</>}
               </button>
-            )}
-          </div>
+              <p className="ui-hint text-center mt-2.5">
+                {!file ? "Upload an image to get started" : processing ? PROCESS_STEPS[stepIdx] : "Next you'll position it on the paper"}
+              </p>
+            </div>
+          </aside>
         </div>
       )}
 
-      {/* ── Stage: Composer ── */}
-      {stage === "composer" && (
-        <div className="flex flex-col gap-5">
-          <SectionLabel num={3} label="Compose Layout" gradient="linear-gradient(135deg,#2563eb,#7c3aed)" />
+      {stage === "upload" && <PromptPanel penType={penType} />}
+
+      {/* ── Stage: Composer (kept mounted on the export step so "Edit layout" keeps your layout) ── */}
+      {(stage === "composer" || stage === "download") && (
+        <div className={stage === "download" ? "hidden" : "ui-pop"}>
           <ComposerWrapper
             baseLayer={composerBaseLayer}
             settings={plotterSettings}
@@ -750,56 +870,92 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
             }
             processParams={composerProcessParams}
             onGcodeReady={handleGcodeReady}
+            onBack={() => setStage("upload")}
           />
         </div>
       )}
 
       {/* ── Stage: Download ── */}
-      {stage === "download" && gcodeResult && (
-        <div className="flex flex-col gap-5">
-          <SectionLabel num={4} label="Download G-code" gradient="linear-gradient(135deg,#10b981,#2563eb)" />
-          <Card>
-            <div className="p-6 flex flex-col gap-4">
-              {/* Stats */}
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { icon: <ScanLine size={14} />, label: "Strokes", value: gcodeResult.stats.strokeCount.toLocaleString() },
-                  { icon: <Clock size={14} />, label: "Est. Time", value: formatTime(gcodeResult.stats.estimatedTimeSeconds) },
-                  { icon: <Ruler size={14} />, label: "Path Length", value: `${(gcodeResult.stats.pathLengthMm / 1000).toFixed(1)}m` },
-                ].map((s) => (
-                  <div key={s.label} className="flex flex-col items-center gap-1 p-3 rounded-xl"
-                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <span className="text-purple-400">{s.icon}</span>
-                    <span className="text-lg font-black text-white">{s.value}</span>
-                    <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{s.label}</span>
-                  </div>
-                ))}
+      {stage === "download" && gcodeResult && parsedGcode && (
+        <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,1fr)] gap-6 items-start ui-pop">
+
+          {/* Toolpath preview */}
+          <section className="ui-panel overflow-hidden min-w-0">
+            <div className="ui-panel-head">
+              <div className="flex items-center gap-2.5">
+                <Route size={16} className="text-violet-300" />
+                <span className="ui-title">Toolpath preview</span>
               </div>
-
-              <button
-                onClick={handleDownload}
-                className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-black text-white shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:scale-[1.02] transition-all"
-                style={{ background: "linear-gradient(135deg,#10b981,#2563eb)" }}>
-                <Download size={14} />
-                Download G-code
-              </button>
-
-              <button
-                onClick={() => { setStage("upload"); setFile(null); setPreviewUrl(null); setGcodeResult(null); setAutoTraceSvg(null); setProcessResult(null); }}
-                className="flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-white/40 hover:text-white/70 border border-white/[0.08] hover:border-white/[0.16] transition-all">
-                <RotateCw size={12} />
-                Start Over
-              </button>
+              <span className="ui-badge">What the pen will draw</span>
             </div>
-          </Card>
-        </div>
-      )}
+            <div className="ui-stage !rounded-none !border-0 p-4 sm:p-8">
+              <div className="ui-paper p-2 sm:p-3 max-w-[720px] mx-auto">
+                <GcodePreview parsed={parsedGcode} />
+              </div>
+            </div>
+          </section>
 
-      {/* ── Prompt panel ── */}
-      {stage === "upload" && (
-        <div>
-          <SectionLabel num={3} label="ChatGPT Prompt" gradient="linear-gradient(135deg,#a78bfa,#60a5fa)" />
-          <PromptPanel penType={penType} />
+          {/* Summary & actions */}
+          <aside className="ui-panel overflow-hidden lg:sticky lg:top-24 min-w-0">
+            <div className="ui-section flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl grid place-items-center flex-shrink-0"
+                style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.25), rgba(14,165,233,0.2))", border: "1px solid rgba(16,185,129,0.35)" }}>
+                <svg className="ui-check" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5 12.5l4.2 4.2L19 7" stroke="#6ee7b7" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-lg font-bold text-white tracking-tight">Your G-code is ready</p>
+                <p className="ui-hint">Generated for the Sovol SV02 · {orientation} paper</p>
+              </div>
+            </div>
+
+            <div className="ui-section grid grid-cols-2 gap-2.5">
+              {[
+                { icon: <PenTool size={14} />, label: "Strokes", value: parsedGcode.stats.strokes.toLocaleString() },
+                { icon: <Timer size={14} />, label: "Est. plot time", value: `≈ ${formatDuration(parsedGcode.stats.seconds)}` },
+                { icon: <Ruler size={14} />, label: "Ink distance", value: formatDistance(parsedGcode.stats.drawMm) },
+                { icon: <FileCode2 size={14} />, label: "File size", value: formatBytes(parsedGcode.stats.bytes) },
+              ].map((s) => (
+                <div key={s.label} className="ui-stat">
+                  <div className="flex items-center gap-1.5 text-violet-300">{s.icon}<span className="ui-stat-label !mt-0">{s.label}</span></div>
+                  <p className="ui-stat-value mt-1.5">{s.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="ui-section flex flex-col gap-2.5">
+              <button onClick={() => { handleDownload(); setDownloaded(true); }} className="ui-btn ui-btn-success ui-btn-lg w-full">
+                {downloaded ? <><CheckCircle2 size={18} />Download G-code again</> : <><Download size={18} />Download G-code</>}
+              </button>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button onClick={() => setStage("composer")} className="ui-btn">
+                  <ArrowLeft size={15} />Edit layout
+                </button>
+                <button onClick={resetAll} className="ui-btn">
+                  <RefreshCw size={14} />New drawing
+                </button>
+              </div>
+            </div>
+
+            <div className="ui-section">
+              <p className="ui-eyebrow mb-3 flex items-center gap-1.5"><Printer size={13} />Before you plot</p>
+              <ol className="flex flex-col gap-2.5">
+                {[
+                  "Copy the .gcode file to the printer's SD card.",
+                  "Home X and Y only — never home Z with the pen mounted.",
+                  "Lower the pen until it just touches the paper.",
+                  "Start the print and watch the first few strokes.",
+                ].map((t, i) => (
+                  <li key={i} className="flex gap-3 text-[13px]" style={{ color: "var(--ui-text-2)" }}>
+                    <span className="w-5 h-5 rounded-full grid place-items-center text-[11px] font-bold flex-shrink-0 text-violet-200"
+                      style={{ background: "var(--ui-accent-soft)" }}>{i + 1}</span>
+                    {t}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </aside>
         </div>
       )}
 

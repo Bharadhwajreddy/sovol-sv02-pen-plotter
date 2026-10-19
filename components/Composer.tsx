@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { renderBorder, BorderConfig, BorderStyle, DrawingArea } from "@/lib/border-renderer";
 import { renderText, HersheyFontName } from "@/lib/hershey-fonts";
 import { STICKERS, StickerMeta, StickerCategory, getStickerCategories, getStickersByCategory } from "@/lib/sticker-data";
-import { Download, Plus, Type, Layers, ChevronRight, ChevronLeft, RotateCcw, RotateCw, Maximize2 } from "lucide-react";
+import { Download, Plus, Type, Maximize2, ArrowLeft, Loader2, AlertCircle, AlertTriangle, Move, Smile, Frame, Trash2, RectangleVertical, RectangleHorizontal } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +68,7 @@ export interface ComposerProps {
   imageFile?: File;
   processParams?: ProcessParams;
   onGcodeReady: (result: GcodeResult) => void;
+  onBack?: () => void; // UI: return to the drawing settings step
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ function parseSvgPathD(d: string): Array<[number, number]> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function Composer({ baseLayer, settings, imageFile, processParams, onGcodeReady }: ComposerProps) {
+export default function Composer({ baseLayer, settings, imageFile, processParams, onGcodeReady, onBack }: ComposerProps) {
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   // Initialize drawing area from plotter settings so it matches the actual canvas
   const [drawingArea, setDrawingArea] = useState<DrawingArea>(() => ({
@@ -145,7 +146,6 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
   const [heightInput, setHeightInput] = useState(String(settings.canvas_y));
   const [xInput, setXInput] = useState(String(settings.offset_x));
   const [yInput, setYInput] = useState(String(settings.offset_y));
-  const [imageRotation, setImageRotation] = useState<0 | 90 | 180 | 270>(0);
   const [imageScale, setImageScale] = useState(100);
 
   // Drag state for stickers
@@ -496,211 +496,121 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
     height: drawingArea.height * pxPerMm,
   };
 
+  // ── UI-only derived values ───────────────────────────────────────────────
+  const overX = Math.max(0, Math.round(drawingArea.x + drawingArea.width - a4.width));
+  const overY = Math.max(0, Math.round(drawingArea.y + drawingArea.height - a4.height));
+  const resetArea = () => {
+    const newW = settings.canvas_x;
+    const newH = settings.canvas_y;
+    setDrawingArea({ x: settings.offset_x, y: settings.offset_y, width: newW, height: newH });
+    setWidthInput(String(newW));
+    setHeightInput(String(newH));
+    setXInput(String(settings.offset_x));
+    setYInput(String(settings.offset_y));
+  };
+  const scaleFill = ((imageScale - 50) / 150) * 100;
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex gap-4 w-full min-w-0">
+    <div className="grid lg:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start w-full min-w-0">
       {/* ── Canvas area ── */}
-      <div ref={canvasColRef} className={`flex flex-col gap-3 min-w-0 ${panelCollapsed ? "flex-1" : "w-[65%]"} transition-all duration-200`}>
+      <section ref={canvasColRef} className="ui-panel overflow-hidden min-w-0">
         {/* Toolbar */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={toggleOrientation}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.10] text-white/70 hover:bg-white/[0.10] hover:text-white transition-all"
-          >
-            <RotateCcw size={12} />
-            {orientation === "portrait" ? "Portrait" : "Landscape"}
-          </button>
-          <button
-            onClick={() => setImageRotation((r) => ((r + 90) % 360) as 0 | 90 | 180 | 270)}
-            title="Rotate image 90°"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.10] text-white/70 hover:bg-white/[0.10] hover:text-white transition-all"
-          >
-            <RotateCw size={12} />
-            {imageRotation}°
-          </button>
-          <button
-            onClick={() => {
-              const newW = settings.canvas_x;
-              const newH = settings.canvas_y;
-              setDrawingArea({ x: settings.offset_x, y: settings.offset_y, width: newW, height: newH });
-              setWidthInput(String(newW));
-              setHeightInput(String(newH));
-              setXInput(String(settings.offset_x));
-              setYInput(String(settings.offset_y));
-            }}
-            title="Fit drawing area to canvas"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.10] text-white/70 hover:bg-white/[0.10] hover:text-white transition-all"
-          >
-            <Maximize2 size={12} />
-            Fit
-          </button>
-          <span className="text-xs text-white/30 ml-1">1mm={pxPerMm.toFixed(1)}px</span>
-          <div className="flex-1" />
-          <button
-            onClick={generateGcode}
-            disabled={generating}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black text-white bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-purple-500/20"
-          >
-            <Download size={12} />
-            {generating ? (imageFile ? "Processing image…" : "Generating…") : "Generate G-code"}
-          </button>
+        <div className="ui-panel-head flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="ui-seg">
+              {(["portrait", "landscape"] as const).map((o) => (
+                <button key={o} type="button" aria-pressed={orientation === o}
+                  onClick={() => { if (orientation !== o) toggleOrientation(); }}
+                  className="ui-seg-btn capitalize">
+                  {o === "portrait" ? <RectangleVertical size={14} /> : <RectangleHorizontal size={14} />}{o}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={resetArea} title="Reset the drawing area to the plotter canvas" className="ui-btn ui-btn-sm">
+              <Maximize2 size={13} />Reset area
+            </button>
+          </div>
+          <div className="hidden sm:flex items-center gap-2">
+            <span className="ui-badge">A4 · {a4.width} × {a4.height} mm</span>
+          </div>
         </div>
 
-        {genError && (
-          <div className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300">
-            {genError}
+        {(overX > 0 || overY > 0) && (
+          <div className="flex items-start gap-2.5 px-5 py-2.5 border-b text-[12.5px]" role="status"
+            style={{ borderColor: "rgba(245,158,11,0.2)", background: "rgba(245,158,11,0.07)", color: "#fcd34d" }}>
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>
+              The drawing area runs {[overX > 0 ? `${overX} mm past the right edge` : null, overY > 0 ? `${overY} mm past the bottom edge` : null].filter(Boolean).join(" and ")} of
+              the A4 sheet. Make sure your paper covers it, or reduce the size/offset.
+            </span>
           </div>
         )}
 
-        {/* A4 Canvas — wrapped in scrollable container so landscape doesn't overlap controls */}
-        <div className="overflow-auto">
-        <div
-          ref={canvasRef}
-          className="relative bg-white rounded-xl overflow-hidden shadow-2xl shadow-black/40 mx-auto"
-          style={{ width: canvasPx.width, height: canvasPx.height }}
-          aria-label={`A4 canvas ${orientation}`}
-        >
-          {/* Base image layer — draggable indirectly via drawing area box */}
-          {baseLayer.type === "svg" && baseLayer.svg && (
-            <div
-              className="absolute pointer-events-none"
-              style={{
-                left: daPx.x, top: daPx.y,
-                width: daPx.width, height: daPx.height,
-                overflow: "hidden",
-                transform: [
-                  imageRotation ? `rotate(${imageRotation}deg)` : "",
-                  imageScale !== 100 ? `scale(${(imageScale / 100).toFixed(2)})` : "",
-                ].filter(Boolean).join(" ") || undefined,
-                transformOrigin: "center",
-              }}
-              dangerouslySetInnerHTML={{ __html: baseLayer.svg }}
-            />
-          )}
-          {baseLayer.type === "sketch" && baseLayer.dataUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={baseLayer.dataUrl}
-              alt="Base sketch"
-              className="absolute object-contain pointer-events-none"
-              style={{
-                left: daPx.x, top: daPx.y,
-                width: daPx.width, height: daPx.height,
-                transform: [
-                  imageRotation ? `rotate(${imageRotation}deg)` : "",
-                  imageScale !== 100 ? `scale(${(imageScale / 100).toFixed(2)})` : "",
-                ].filter(Boolean).join(" ") || undefined,
-                transformOrigin: "center",
-              }}
-            />
-          )}
-
-          {/* Drawing area indicator — draggable to reposition */}
+        {/* Stage */}
+        <div className="relative ui-stage !rounded-none !border-0 p-4 sm:p-6 overflow-auto">
           <div
-            className="absolute border-2 border-dashed border-blue-400/60 cursor-move"
-            style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height, zIndex: 10 }}
-            title="Drag to reposition drawing area"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              daDragRef.current = {
-                startX: e.clientX,
-                startY: e.clientY,
-                origX: drawingArea.x,
-                origY: drawingArea.y,
-              };
-              const origW = drawingArea.width;
-              const origH = drawingArea.height;
-              const origOri = orientation;
-              const onMove = (me: MouseEvent) => {
-                if (!daDragRef.current) return;
-                const dx = (me.clientX - daDragRef.current.startX) / pxPerMm;
-                const dy = (me.clientY - daDragRef.current.startY) / pxPerMm;
-                const clamped = clampDrawingArea(origW, origH, origOri, daDragRef.current.origX + dx, daDragRef.current.origY + dy);
-                setDrawingArea((prev) => ({ ...prev, x: clamped.x, y: clamped.y }));
-                setXInput(String(Math.round(clamped.x)));
-                setYInput(String(Math.round(clamped.y)));
-              };
-              const onUp = () => {
-                daDragRef.current = null;
-                window.removeEventListener("mousemove", onMove);
-                window.removeEventListener("mouseup", onUp);
-              };
-              window.addEventListener("mousemove", onMove);
-              window.addEventListener("mouseup", onUp);
-            }}
-          />
-
-          {/* Border overlay */}
-          {borderResult.svgPaths.length > 0 && (
-            <svg
-              className="absolute inset-0 pointer-events-none"
-              style={{ width: canvasPx.width, height: canvasPx.height }}
-              viewBox={`0 0 ${a4.width} ${a4.height}`}
-            >
-              {borderResult.svgPaths.map((p, i) => (
-                <g key={i} dangerouslySetInnerHTML={{ __html: p }} />
-              ))}
-            </svg>
-          )}
-
-          {/* Text elements */}
-          {textElements.map((el) => {
-            const rendered = renderText(el.text, el.font, el.sizeMm, 1);
-            return (
+            ref={canvasRef}
+            className="relative ui-paper overflow-hidden mx-auto"
+            style={{ width: canvasPx.width, height: canvasPx.height }}
+            aria-label={`A4 canvas ${orientation}`}
+          >
+            {/* Base image layer */}
+            {baseLayer.type === "svg" && baseLayer.svg && (
               <div
-                key={el.id}
-                className={`absolute cursor-move select-none ${selectedTextId === el.id ? "ring-2 ring-blue-400" : ""}`}
-                style={{ left: el.x * pxPerMm, top: el.y * pxPerMm }}
-                onClick={() => setSelectedTextId(el.id)}
-              >
-                <svg
-                  viewBox={`0 0 ${rendered.boundingBox.width} ${rendered.boundingBox.height}`}
-                  style={{ width: rendered.boundingBox.width * pxPerMm, height: rendered.boundingBox.height * pxPerMm }}
-                >
-                  {rendered.svgPaths.map((p, i) => (
-                    <g key={i} dangerouslySetInnerHTML={{ __html: p }} />
-                  ))}
-                </svg>
-              </div>
-            );
-          })}
+                className="absolute pointer-events-none"
+                style={{
+                  left: daPx.x, top: daPx.y,
+                  width: daPx.width, height: daPx.height,
+                  overflow: "hidden",
+                  transform: imageScale !== 100 ? `scale(${(imageScale / 100).toFixed(2)})` : undefined,
+                  transformOrigin: "center",
+                }}
+                dangerouslySetInnerHTML={{ __html: baseLayer.svg }}
+              />
+            )}
+            {baseLayer.type === "sketch" && baseLayer.dataUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={baseLayer.dataUrl}
+                alt="Base sketch"
+                className="absolute object-contain pointer-events-none"
+                style={{
+                  left: daPx.x, top: daPx.y,
+                  width: daPx.width, height: daPx.height,
+                  transform: imageScale !== 100 ? `scale(${(imageScale / 100).toFixed(2)})` : undefined,
+                  transformOrigin: "center",
+                }}
+              />
+            )}
 
-          {/* Sticker elements — draggable */}
-          {stickerElements.map((el) => (
+            {/* Drawing area indicator — draggable to reposition */}
             <div
-              key={el.id}
-              className={`absolute cursor-move select-none ${selectedStickerId === el.id ? "ring-2 ring-purple-400 rounded" : ""}`}
-              style={{
-                left: el.x * pxPerMm,
-                top: el.y * pxPerMm,
-                width: el.width * pxPerMm,
-                height: el.height * pxPerMm,
-                touchAction: "none",
-              }}
-              onClick={() => setSelectedStickerId(el.id)}
+              className="absolute cursor-move group"
+              style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height, zIndex: 10, outline: "1.5px dashed rgba(99,102,241,0.75)", outlineOffset: -1 }}
+              title="Drag to move the drawing"
               onMouseDown={(e) => {
                 e.preventDefault();
-                dragRef.current = {
-                  id: el.id,
+                daDragRef.current = {
                   startX: e.clientX,
                   startY: e.clientY,
-                  origX: el.x,
-                  origY: el.y,
+                  origX: drawingArea.x,
+                  origY: drawingArea.y,
                 };
+                const origW = drawingArea.width;
+                const origH = drawingArea.height;
+                const origOri = orientation;
                 const onMove = (me: MouseEvent) => {
-                  if (!dragRef.current || dragRef.current.id !== el.id) return;
-                  const dx = (me.clientX - dragRef.current.startX) / pxPerMm;
-                  const dy = (me.clientY - dragRef.current.startY) / pxPerMm;
-                  setStickerElements((prev) =>
-                    prev.map((s) =>
-                      s.id === el.id
-                        ? { ...s, x: dragRef.current!.origX + dx, y: dragRef.current!.origY + dy }
-                        : s
-                    )
-                  );
+                  if (!daDragRef.current) return;
+                  const dx = (me.clientX - daDragRef.current.startX) / pxPerMm;
+                  const dy = (me.clientY - daDragRef.current.startY) / pxPerMm;
+                  const clamped = clampDrawingArea(origW, origH, origOri, daDragRef.current.origX + dx, daDragRef.current.origY + dy);
+                  setDrawingArea((prev) => ({ ...prev, x: clamped.x, y: clamped.y }));
+                  setXInput(String(Math.round(clamped.x)));
+                  setYInput(String(Math.round(clamped.y)));
                 };
                 const onUp = () => {
-                  dragRef.current = null;
+                  daDragRef.current = null;
                   window.removeEventListener("mousemove", onMove);
                   window.removeEventListener("mouseup", onUp);
                 };
@@ -708,233 +618,347 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
                 window.addEventListener("mouseup", onUp);
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={el.svgPath} alt={el.stickerId} className="w-full h-full object-contain pointer-events-none" />
-            </div>
-          ))}
-        </div>
-        </div>{/* end overflow-auto wrapper */}
-      </div>
-
-      {/* ── Controls panel ── */}
-      <div className={`flex flex-col gap-3 transition-all duration-200 ${panelCollapsed ? "w-10" : "flex-1 min-w-[280px]"}`}>
-        {/* Collapse toggle */}
-        <button
-          onClick={() => setPanelCollapsed((v) => !v)}
-          className="self-start p-2 rounded-xl bg-white/[0.06] border border-white/[0.08] text-white/50 hover:text-white hover:bg-white/[0.10] transition-all"
-          aria-label={panelCollapsed ? "Expand controls" : "Collapse controls"}
-        >
-          {panelCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-        </button>
-
-        {!panelCollapsed && (
-          <>
-            {/* Drawing area controls */}
-            <div className="rounded-2xl border border-white/[0.08] bg-[#161616] p-4">
-              <p className="text-xs font-bold text-white/60 mb-3 uppercase tracking-wider">Drawing Area</p>
-              <div className="flex gap-2 mb-2">
-                <label className="flex flex-col gap-1 flex-1">
-                  <span className="text-[10px] text-white/40">X Offset (mm)</span>
-                  <input
-                    type="number"
-                    value={xInput}
-                    min={CLAMP[orientation].minX}
-                    max={CLAMP[orientation].maxX}
-                    onChange={(e) => setXInput(e.target.value)}
-                    onBlur={() => commitX(xInput)}
-                    onKeyDown={(e) => { if (e.key === "Enter") commitX(xInput); }}
-                    className="w-full px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.10] text-white text-xs focus:outline-none focus:border-purple-500/50"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 flex-1">
-                  <span className="text-[10px] text-white/40">Y Offset (mm)</span>
-                  <input
-                    type="number"
-                    value={yInput}
-                    min={CLAMP[orientation].minY}
-                    max={CLAMP[orientation].maxY}
-                    onChange={(e) => setYInput(e.target.value)}
-                    onBlur={() => commitY(yInput)}
-                    onKeyDown={(e) => { if (e.key === "Enter") commitY(yInput); }}
-                    className="w-full px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.10] text-white text-xs focus:outline-none focus:border-purple-500/50"
-                  />
-                </label>
-              </div>
-              <div className="flex gap-2">
-                <label className="flex flex-col gap-1 flex-1">
-                  <span className="text-[10px] text-white/40">Width (mm)</span>
-                  <input
-                    type="number"
-                    value={widthInput}
-                    min={CLAMP[orientation].minW}
-                    max={CLAMP[orientation].maxW}
-                    onChange={(e) => setWidthInput(e.target.value)}
-                    onBlur={() => commitWidth(widthInput)}
-                    onKeyDown={(e) => { if (e.key === "Enter") commitWidth(widthInput); }}
-                    className="w-full px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.10] text-white text-xs focus:outline-none focus:border-purple-500/50"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 flex-1">
-                  <span className="text-[10px] text-white/40">Height (mm)</span>
-                  <input
-                    type="number"
-                    value={heightInput}
-                    min={CLAMP[orientation].minH}
-                    max={CLAMP[orientation].maxH}
-                    onChange={(e) => setHeightInput(e.target.value)}
-                    onBlur={() => commitHeight(heightInput)}
-                    onKeyDown={(e) => { if (e.key === "Enter") commitHeight(heightInput); }}
-                    className="w-full px-2 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.10] text-white text-xs focus:outline-none focus:border-purple-500/50"
-                  />
-                </label>
-              </div>
-              <div className="mt-3 flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-white/50">Image Scale: {imageScale}%</span>
-                  <button
-                    onClick={() => setImageScale(100)}
-                    className="text-[10px] text-purple-400/60 hover:text-purple-400 transition-colors"
-                  >
-                    Reset
-                  </button>
-                </div>
-                <input
-                  type="range" min={50} max={200} step={5} value={imageScale}
-                  onChange={(e) => setImageScale(Number(e.target.value))}
-                  className="w-full accent-purple-500"
-                />
-                <p className="text-[9px] text-white/25">
-                  &gt;100% enlarges image beyond drawing area — edges clip to paper
-                </p>
-              </div>
-              <p className="text-[9px] text-white/25 mt-2">
-                {drawingArea.x},{drawingArea.y} → {drawingArea.x + drawingArea.width},{drawingArea.y + drawingArea.height} mm
-              </p>
+              <span className="absolute -top-px left-2 -translate-y-full px-1.5 py-0.5 rounded-t-md text-[10px] font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ background: "rgba(79,70,229,0.9)" }}>
+                <Move size={10} className="inline -mt-0.5 mr-1" />drag to move
+              </span>
             </div>
 
-            {/* Tab bar */}
-            <div className="flex rounded-xl bg-white/[0.04] border border-white/[0.06] p-1 gap-1">
-              {(["border", "text", "stickers"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
-                    activeTab === tab
-                      ? "bg-white/[0.10] text-white"
-                      : "text-white/40 hover:text-white/70"
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            {/* Border tab */}
-            {activeTab === "border" && (
-              <div className="rounded-2xl border border-white/[0.08] bg-[#161616] p-4 flex flex-col gap-3">
-                <p className="text-xs font-bold text-white/60 uppercase tracking-wider">Border Style</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(["none", "simple-rect", "rounded-rect", "double-line", "corner-marks", "dashed", "ornamental-corners"] as BorderStyle[]).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => setBorder((b) => ({ ...b, style: s }))}
-                      className={`px-2 py-1.5 rounded-lg text-[10px] font-semibold capitalize transition-all border ${
-                        border.style === s
-                          ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
-                          : "bg-white/[0.04] border-white/[0.08] text-white/50 hover:text-white/80"
-                      }`}
-                    >
-                      {s.replace(/-/g, " ")}
-                    </button>
-                  ))}
-                </div>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[10px] text-white/40">Margin (mm): {border.margin}</span>
-                  <input type="range" min={0} max={20} value={border.margin}
-                    onChange={(e) => setBorder((b) => ({ ...b, margin: Number(e.target.value) }))}
-                    className="w-full accent-purple-500" />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[10px] text-white/40">Thickness (passes): {border.thickness}</span>
-                  <input type="range" min={1} max={5} value={border.thickness}
-                    onChange={(e) => setBorder((b) => ({ ...b, thickness: Number(e.target.value) }))}
-                    className="w-full accent-purple-500" />
-                </label>
-              </div>
+            {/* Border overlay */}
+            {borderResult.svgPaths.length > 0 && (
+              <svg
+                className="absolute inset-0 pointer-events-none"
+                style={{ width: canvasPx.width, height: canvasPx.height }}
+                viewBox={`0 0 ${a4.width} ${a4.height}`}
+              >
+                {borderResult.svgPaths.map((p, i) => (
+                  <g key={i} dangerouslySetInnerHTML={{ __html: p }} />
+                ))}
+              </svg>
             )}
 
-            {/* Text tab */}
-            {activeTab === "text" && (
-              <div className="rounded-2xl border border-white/[0.08] bg-[#161616] p-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-white/60 uppercase tracking-wider">Text Elements</p>
-                  <button onClick={addText}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/20 hover:bg-blue-500/25 transition-all">
-                    <Plus size={10} /> Add Text
-                  </button>
+            {/* Text elements */}
+            {textElements.map((el) => {
+              const rendered = renderText(el.text, el.font, el.sizeMm, 1);
+              return (
+                <div
+                  key={el.id}
+                  className={`absolute cursor-pointer select-none rounded-sm ${selectedTextId === el.id ? "ring-2 ring-indigo-400" : ""}`}
+                  style={{ left: el.x * pxPerMm, top: el.y * pxPerMm }}
+                  onClick={() => { setSelectedTextId(el.id); setActiveTab("text"); }}
+                >
+                  <svg
+                    viewBox={`0 0 ${rendered.boundingBox.width} ${rendered.boundingBox.height}`}
+                    style={{ width: rendered.boundingBox.width * pxPerMm, height: rendered.boundingBox.height * pxPerMm }}
+                  >
+                    {rendered.svgPaths.map((p, i) => (
+                      <g key={i} dangerouslySetInnerHTML={{ __html: p }} />
+                    ))}
+                  </svg>
                 </div>
-                {textElements.map((el) => (
-                  <div key={el.id}
-                    className={`p-3 rounded-xl border transition-all cursor-pointer ${selectedTextId === el.id ? "border-blue-500/40 bg-blue-500/[0.06]" : "border-white/[0.06] bg-white/[0.02]"}`}
-                    onClick={() => setSelectedTextId(el.id)}>
-                    <input
-                      value={el.text}
-                      onChange={(e) => setTextElements((prev) => prev.map((t) => t.id === el.id ? { ...t, text: e.target.value } : t))}
-                      className="w-full bg-transparent text-white text-xs font-semibold focus:outline-none mb-2"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <div className="flex gap-2">
-                      <select value={el.font}
-                        onChange={(e) => setTextElements((prev) => prev.map((t) => t.id === el.id ? { ...t, font: e.target.value as HersheyFontName } : t))}
-                        className="flex-1 bg-white/[0.06] border border-white/[0.10] text-white text-[10px] rounded-lg px-2 py-1 focus:outline-none">
-                        {HERSHEY_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
-                      </select>
+              );
+            })}
+
+            {/* Sticker elements — draggable */}
+            {stickerElements.map((el) => (
+              <div
+                key={el.id}
+                className={`absolute cursor-move select-none rounded ${selectedStickerId === el.id ? "ring-2 ring-violet-400" : ""}`}
+                style={{
+                  left: el.x * pxPerMm,
+                  top: el.y * pxPerMm,
+                  width: el.width * pxPerMm,
+                  height: el.height * pxPerMm,
+                  touchAction: "none",
+                  zIndex: 11,
+                }}
+                onClick={() => setSelectedStickerId(el.id)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  dragRef.current = {
+                    id: el.id,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    origX: el.x,
+                    origY: el.y,
+                  };
+                  const onMove = (me: MouseEvent) => {
+                    if (!dragRef.current || dragRef.current.id !== el.id) return;
+                    const dx = (me.clientX - dragRef.current.startX) / pxPerMm;
+                    const dy = (me.clientY - dragRef.current.startY) / pxPerMm;
+                    setStickerElements((prev) =>
+                      prev.map((s) =>
+                        s.id === el.id
+                          ? { ...s, x: dragRef.current!.origX + dx, y: dragRef.current!.origY + dy }
+                          : s
+                      )
+                    );
+                  };
+                  const onUp = () => {
+                    dragRef.current = null;
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={el.svgPath} alt={el.stickerId} className="w-full h-full object-contain pointer-events-none" />
+              </div>
+            ))}
+          </div>
+
+          {generating && (
+            <div className="absolute inset-0 grid place-items-center" style={{ background: "rgba(7,7,11,0.55)", backdropFilter: "blur(2px)" }} aria-live="polite">
+              <div className="ui-panel px-5 py-4 flex items-center gap-3 ui-pop">
+                <Loader2 size={18} className="animate-spin text-violet-300" />
+                <div>
+                  <p className="text-sm font-semibold text-white">{imageFile ? "Processing image at full detail…" : "Generating G-code…"}</p>
+                  <p className="ui-hint">Usually 5–15 seconds</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t text-[12px] flex flex-wrap gap-x-5 gap-y-1" style={{ borderColor: "var(--ui-line)", color: "var(--ui-text-3)" }}>
+          <span className="inline-flex items-center gap-1.5"><Move size={12} />Drag the dashed box to move the drawing</span>
+          <span className="inline-flex items-center gap-1.5"><Smile size={12} />Drag stickers to place them</span>
+        </div>
+      </section>
+
+      {/* ── Controls panel ── */}
+      <aside className="ui-panel overflow-hidden lg:sticky lg:top-24 min-w-0">
+        {/* Primary action */}
+        <div className="ui-section flex flex-col gap-2.5" style={{ background: "rgba(0,0,0,0.2)" }}>
+          <button
+            onClick={generateGcode}
+            disabled={generating}
+            className="ui-btn ui-btn-primary ui-btn-lg w-full"
+          >
+            {generating ? <><Loader2 size={17} className="animate-spin" />{imageFile ? "Processing image…" : "Generating…"}</> : <><Download size={17} />Generate G-code</>}
+          </button>
+          {onBack && (
+            <button type="button" onClick={onBack} disabled={generating} className="ui-btn ui-btn-ghost ui-btn-sm w-full">
+              <ArrowLeft size={13} />Back to drawing settings
+            </button>
+          )}
+          {genError && (
+            <div role="alert" className="flex items-start gap-2 px-3 py-2.5 rounded-xl border text-[12.5px] text-red-200"
+              style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.25)" }}>
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5 text-red-400" />{genError}
+            </div>
+          )}
+        </div>
+
+        {/* Placement */}
+        <div className="ui-section">
+          <div className="flex items-center justify-between mb-3">
+            <p className="ui-eyebrow">Drawing area</p>
+            <span className="text-[11px] font-mono" style={{ color: "var(--ui-text-3)" }}>
+              {Math.round(drawingArea.x)},{Math.round(drawingArea.y)} → {Math.round(drawingArea.x + drawingArea.width)},{Math.round(drawingArea.y + drawingArea.height)}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2.5">
+            {[
+              { label: "X offset", value: xInput, set: setXInput, commit: commitX, min: CLAMP[orientation].minX, max: CLAMP[orientation].maxX },
+              { label: "Y offset", value: yInput, set: setYInput, commit: commitY, min: CLAMP[orientation].minY, max: CLAMP[orientation].maxY },
+              { label: "Width", value: widthInput, set: setWidthInput, commit: commitWidth, min: CLAMP[orientation].minW, max: CLAMP[orientation].maxW },
+              { label: "Height", value: heightInput, set: setHeightInput, commit: commitHeight, min: CLAMP[orientation].minH, max: CLAMP[orientation].maxH },
+            ].map((f) => (
+              <label key={f.label} className="ui-field">
+                <span>{f.label}</span>
+                <input
+                  type="number"
+                  value={f.value}
+                  min={f.min}
+                  max={f.max}
+                  onChange={(e) => f.set(e.target.value)}
+                  onBlur={() => f.commit(f.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") f.commit(f.value); }}
+                  className="ui-input"
+                />
+                <span className="ui-unit">mm</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="mt-5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] font-semibold text-white/85">Image size</span>
+              <div className="flex items-center gap-2">
+                {imageScale !== 100 && (
+                  <button onClick={() => setImageScale(100)} className="text-[11px] font-semibold text-violet-300 hover:text-violet-200">Reset</button>
+                )}
+                <span className="ui-value">{imageScale}%</span>
+              </div>
+            </div>
+            <input
+              type="range" min={50} max={200} step={5} value={imageScale}
+              onChange={(e) => setImageScale(Number(e.target.value))}
+              className="ui-range" style={{ ["--fill" as string]: `${scaleFill}%` }} aria-label="Image size"
+            />
+            <p className="ui-hint mt-1.5">Above 100% the image grows past the drawing area and its edges are cut.</p>
+          </div>
+        </div>
+
+        {/* Extras */}
+        <div className="ui-section">
+          <div className="ui-seg mb-4" role="tablist" aria-label="Decorations">
+            {([
+              { id: "border", label: "Border", icon: <Frame size={13} /> },
+              { id: "text", label: "Text", icon: <Type size={13} /> },
+              { id: "stickers", label: "Stickers", icon: <Smile size={13} /> },
+            ] as const).map((tab) => (
+              <button key={tab.id} role="tab" aria-selected={activeTab === tab.id}
+                onClick={() => setActiveTab(tab.id)} className="ui-seg-btn">
+                {tab.icon}{tab.label}
+                {tab.id === "text" && textElements.length > 0 && <span className="ui-value !h-[18px] !min-w-[18px] !px-1 !text-[10px]">{textElements.length}</span>}
+                {tab.id === "stickers" && stickerElements.length > 0 && <span className="ui-value !h-[18px] !min-w-[18px] !px-1 !text-[10px]">{stickerElements.length}</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Border tab */}
+          {activeTab === "border" && (
+            <div className="flex flex-col gap-4 ui-pop">
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Border style">
+                {(["none", "simple-rect", "rounded-rect", "double-line", "corner-marks", "dashed", "ornamental-corners"] as BorderStyle[]).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    role="radio"
+                    aria-checked={border.style === s}
+                    onClick={() => setBorder((b) => ({ ...b, style: s }))}
+                    className="ui-option !p-2.5 !gap-2.5 !items-center"
+                  >
+                    <BorderGlyph style={s} active={border.style === s} />
+                    <span className="text-[12px] font-semibold capitalize text-white/85 leading-tight">{s.replace(/-/g, " ")}</span>
+                  </button>
+                ))}
+              </div>
+              {border.style !== "none" && (
+                <>
+                  <MiniSlider label="Margin" unit="mm" value={border.margin} min={0} max={20}
+                    onChange={(v) => setBorder((b) => ({ ...b, margin: v }))} />
+                  <MiniSlider label="Thickness" unit={border.thickness === 1 ? "pass" : "passes"} value={border.thickness} min={1} max={5}
+                    onChange={(v) => setBorder((b) => ({ ...b, thickness: v }))} />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Text tab */}
+          {activeTab === "text" && (
+            <div className="flex flex-col gap-3 ui-pop">
+              <button onClick={addText} className="ui-btn w-full !border-dashed">
+                <Plus size={14} />Add text
+              </button>
+              {textElements.map((el) => (
+                <div key={el.id}
+                  className={`p-3 rounded-xl border transition-all cursor-pointer ${selectedTextId === el.id ? "border-indigo-400/50 bg-indigo-500/[0.07]" : "border-white/[0.07] bg-white/[0.02]"}`}
+                  onClick={() => setSelectedTextId(el.id)}>
+                  <input
+                    value={el.text}
+                    onChange={(e) => setTextElements((prev) => prev.map((t) => t.id === el.id ? { ...t, text: e.target.value } : t))}
+                    className="ui-input !pr-3 mb-2"
+                    aria-label="Text"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex gap-2">
+                    <select value={el.font}
+                      onChange={(e) => setTextElements((prev) => prev.map((t) => t.id === el.id ? { ...t, font: e.target.value as HersheyFontName } : t))}
+                      className="ui-input flex-1 capitalize" aria-label="Font">
+                      {HERSHEY_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                    <label className="ui-field w-24">
                       <input
                         type="number" min={4} max={50}
                         defaultValue={el.sizeMm}
                         key={`size-${el.id}`}
+                        aria-label="Text size in mm"
                         onBlur={(e) => {
                           const v = Math.max(4, Math.min(50, Number(e.target.value) || 10));
                           setTextElements((prev) => prev.map((t) => t.id === el.id ? { ...t, sizeMm: v } : t));
                           e.target.value = String(v);
                         }}
                         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                        className="w-14 bg-white/[0.06] border border-white/[0.10] text-white text-[10px] rounded-lg px-2 py-1 focus:outline-none" />
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); setTextElements((prev) => prev.filter((t) => t.id !== el.id)); }}
-                      className="mt-2 text-[10px] text-red-400/60 hover:text-red-400 transition-colors">Remove</button>
+                        className="ui-input" />
+                      <span className="ui-unit">mm</span>
+                    </label>
                   </div>
-                ))}
-                {textElements.length === 0 && (
-                  <p className="text-xs text-white/30 text-center py-4">No text elements yet</p>
-                )}
-              </div>
-            )}
+                  <button onClick={(e) => { e.stopPropagation(); setTextElements((prev) => prev.filter((t) => t.id !== el.id)); }}
+                    className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium text-red-300/70 hover:text-red-300 transition-colors">
+                    <Trash2 size={12} />Remove
+                  </button>
+                </div>
+              ))}
+              {textElements.length === 0 && (
+                <p className="ui-hint text-center py-3">Add a name, date or message — it's drawn with a single-stroke pen font.</p>
+              )}
+            </div>
+          )}
 
-            {/* Stickers tab */}
-            {activeTab === "stickers" && (
-              <div className="rounded-2xl border border-white/[0.08] bg-[#161616] p-4 flex flex-col gap-3">
-                <p className="text-xs font-bold text-white/60 uppercase tracking-wider">Sticker Library</p>
-                {getStickerCategories().map((cat) => (
-                  <div key={cat}>
-                    <p className="text-[10px] text-white/40 capitalize mb-1.5">{cat.replace(/-/g, " ")}</p>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {getStickersByCategory(cat as StickerCategory).map((sticker) => (
-                        <button key={sticker.id} onClick={() => addSticker(sticker)}
-                          title={sticker.name}
-                          className="aspect-square rounded-lg bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.12] hover:border-purple-500/30 transition-all p-1.5 flex items-center justify-center">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={sticker.path} alt={sticker.name} className="w-full h-full object-contain" />
-                        </button>
-                      ))}
-                    </div>
+          {/* Stickers tab */}
+          {activeTab === "stickers" && (
+            <div className="flex flex-col gap-4 ui-pop">
+              {getStickerCategories().map((cat) => (
+                <div key={cat}>
+                  <p className="text-[11.5px] font-semibold capitalize mb-2" style={{ color: "var(--ui-text-3)" }}>{cat.replace(/-/g, " ")}</p>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {getStickersByCategory(cat as StickerCategory).map((sticker) => (
+                      <button key={sticker.id} onClick={() => addSticker(sticker)}
+                        title={`Add ${sticker.name}`} aria-label={`Add ${sticker.name}`}
+                        className="aspect-square rounded-lg bg-white border border-transparent hover:border-violet-400 hover:scale-105 transition-all p-1.5 grid place-items-center">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={sticker.path} alt="" className="w-full h-full object-contain" />
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                </div>
+              ))}
+              {stickerElements.length > 0 && (
+                <button onClick={() => { setStickerElements([]); setSelectedStickerId(null); }}
+                  className="ui-btn ui-btn-sm ui-btn-ghost self-start !text-red-300/80">
+                  <Trash2 size={12} />Remove all stickers ({stickerElements.length})
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </aside>
     </div>
+  );
+}
+
+// ─── Small UI pieces ──────────────────────────────────────────────────────────
+
+function MiniSlider({ label, unit, value, min, max, onChange }: { label: string; unit: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
+  return (
+    <label className="block">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[12.5px] font-semibold text-white/80">{label}</span>
+        <span className="text-[12px] font-semibold text-violet-200 tabular-nums">{value} {unit}</span>
+      </div>
+      <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))}
+        className="ui-range" style={{ ["--fill" as string]: `${((value - min) / (max - min)) * 100}%` }} aria-label={label} />
+    </label>
+  );
+}
+
+function BorderGlyph({ style, active }: { style: BorderStyle; active: boolean }) {
+  const c = active ? "#c4b5fd" : "rgba(255,255,255,0.55)";
+  const common = { fill: "none", stroke: c, strokeWidth: 1.6, strokeLinecap: "round" as const };
+  return (
+    <svg width="34" height="26" viewBox="0 0 34 26" className="flex-shrink-0 rounded-md" style={{ background: "rgba(0,0,0,0.3)" }} aria-hidden="true">
+      {style === "none" && <path d="M10 18 L24 8" {...common} strokeDasharray="2 3" />}
+      {style === "simple-rect" && <rect x="5" y="4" width="24" height="18" {...common} />}
+      {style === "rounded-rect" && <rect x="5" y="4" width="24" height="18" rx="4" {...common} />}
+      {style === "double-line" && <><rect x="4" y="3" width="26" height="20" {...common} strokeWidth={1.2} /><rect x="7" y="6" width="20" height="14" {...common} strokeWidth={1.2} /></>}
+      {style === "corner-marks" && <path d="M5 10V4h6M23 4h6v6M29 16v6h-6M11 22H5v-6" {...common} />}
+      {style === "dashed" && <rect x="5" y="4" width="24" height="18" {...common} strokeDasharray="3 2.5" />}
+      {style === "ornamental-corners" && <path d="M5 11c0-4 2-7 6-7M29 11c0-4-2-7-6-7M5 15c0 4 2 7 6 7M29 15c0 4-2 7-6 7M8 7.5a1.5 1.5 0 1 0 0.01 0M26 7.5a1.5 1.5 0 1 0 0.01 0M8 18.5a1.5 1.5 0 1 0 0.01 0M26 18.5a1.5 1.5 0 1 0 0.01 0" {...common} strokeWidth={1.4} />}
+    </svg>
   );
 }
