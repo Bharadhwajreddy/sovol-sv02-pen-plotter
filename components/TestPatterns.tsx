@@ -212,41 +212,25 @@ export default function TestPatterns() {
   const calibration = patterns.filter(p => p.category === "calibration");
   const cartoons = patterns.filter(p => p.category === "cartoon");
 
-  const PatternCard = ({ pattern }: { pattern: TestPattern }) => (
-    <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl overflow-hidden flex flex-col">
-      <div className="bg-white p-4 flex items-center justify-center h-36">
-        <div className="w-28 h-28 text-black">{pattern.svgPreview}</div>
+  const PatternCard = ({ pattern, i }: { pattern: TestPattern; i: number }) => (
+    <div className={`ui-panel overflow-hidden flex flex-col group ui-rise ui-d${(i % 5) + 1}`}>
+      <div className="ui-stage !rounded-none !border-0 !border-b p-5 grid place-items-center h-44" style={{ borderColor: "var(--ui-line)" }}>
+        <div className="ui-paper w-32 h-32 p-3 transition-transform duration-500 group-hover:-rotate-2 group-hover:scale-105" style={{ color: "var(--ui-plot-ink)" }}>{pattern.svgPreview}</div>
       </div>
-      <div className="p-4 flex flex-col gap-3 flex-1">
+      <div className="p-5 flex flex-col gap-3.5 flex-1">
         <div>
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="font-semibold text-white text-sm">{pattern.name}</h3>
-            <div className="flex items-center gap-1 text-xs text-[#6b7280]">
-              <Clock size={11} />
-              {pattern.estimatedTime}
-            </div>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <h3 className="font-serif-display text-[19px] font-semibold text-tx">{pattern.name}</h3>
+            <span className="ui-badge"><Clock size={11} />{pattern.estimatedTime}</span>
           </div>
-          <p className="text-xs text-[#6b7280] leading-relaxed">{pattern.description}</p>
+          <p className="text-[13px] text-tx2 leading-relaxed">{pattern.description}</p>
         </div>
-        <div className="bg-[#0f0f0f] rounded-lg p-3 space-y-2">
-          <div>
-            <p className="text-xs font-medium text-[#3b82f6] mb-0.5">Tests</p>
-            <p className="text-xs text-gray-400">{pattern.tests}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-green-400 mb-0.5">Good result</p>
-            <p className="text-xs text-gray-400">{pattern.goodResult}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-yellow-400 mb-0.5">If wrong</p>
-            <p className="text-xs text-gray-400">{pattern.ifWrong}</p>
-          </div>
-        </div>
-        <a
-          href={pattern.file}
-          download
-          className="mt-auto flex items-center justify-center gap-2 py-2.5 px-4 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-sm font-medium rounded-lg transition-colors"
-        >
+        <dl className="rounded-2xl p-3.5 space-y-2.5 text-[12.5px]" style={{ background: "var(--ui-panel-2)" }}>
+          <div><dt className="font-semibold text-ink mb-0.5">Tests</dt><dd className="text-tx2">{pattern.tests}</dd></div>
+          <div><dt className="font-semibold text-okc mb-0.5">Good result</dt><dd className="text-tx2">{pattern.goodResult}</dd></div>
+          <div><dt className="font-semibold text-terra mb-0.5">If wrong</dt><dd className="text-tx2">{pattern.ifWrong}</dd></div>
+        </dl>
+        <a href={pattern.file} download className="ui-btn ui-btn-primary mt-auto w-full">
           <Download size={14} />
           Download G-code
         </a>
@@ -255,39 +239,43 @@ export default function TestPatterns() {
   );
 
   return (
-    <div className="space-y-8">
-      {/* Calibration */}
+    <div className="space-y-10">
       <div>
-        <h2 className="text-lg font-semibold text-white">Calibration Patterns</h2>
-        <p className="text-sm text-[#6b7280] mt-1">
-          Run these in order before your first real drawing. Start with Z-Hop, then Calibration Cross.
+        <span className="ui-badge ui-badge-ink"><Info size={12} />Calibrate first</span>
+        <h2 className="mt-4 font-serif-display text-[34px] sm:text-[42px] leading-[1.05] font-semibold text-tx">Test <em className="text-ink">patterns</em></h2>
+        <p className="mt-2 text-[15px] text-tx2 max-w-2xl">
+          Run the calibration set in order before your first real drawing — start with the Z-Hop test, then the Calibration Cross.
         </p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {calibration.map(p => <PatternCard key={p.id} pattern={p} />)}
-      </div>
 
-      {/* Cartoons */}
-      <div>
-        <h2 className="text-lg font-semibold text-white">Cartoon Patterns</h2>
-        <p className="text-sm text-[#6b7280] mt-1">
-          Fun drawings to test when you have nothing else to plot. All centered on the canvas.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {cartoons.map(p => <PatternCard key={p.id} pattern={p} />)}
-      </div>
+      <section className="space-y-4">
+        <h3 className="ui-eyebrow">Calibration</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {calibration.map((p, i) => <PatternCard key={p.id} pattern={p} i={i} />)}
+        </div>
+      </section>
 
-      {/* Usage note */}
-      <div className="flex items-start gap-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-4">
-        <Info size={16} className="text-[#3b82f6] mt-0.5 shrink-0" />
-        <div className="text-sm text-[#6b7280] space-y-1">
-          <p className="text-gray-300 font-medium">How to use test patterns</p>
+      <section className="space-y-4">
+        <div>
+          <h3 className="ui-eyebrow">Just for fun</h3>
+          <p className="ui-hint mt-1">Cartoon drawings to plot when you have nothing else on the bed. All centred on the canvas.</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {cartoons.map((p, i) => <PatternCard key={p.id} pattern={p} i={i} />)}
+        </div>
+      </section>
+
+      <div className="ui-panel p-5 sm:p-6 flex items-start gap-4">
+        <div className="w-10 h-10 rounded-2xl grid place-items-center flex-shrink-0 text-ink" style={{ background: "var(--ui-ink-soft)" }}>
+          <Info size={18} />
+        </div>
+        <div className="text-[13.5px] text-tx2 space-y-1.5">
+          <p className="font-serif-display text-[18px] font-semibold text-tx">How to use test patterns</p>
           <p>1. Download the G-code file and copy it to your SD card.</p>
-          <p>2. Mount your pen and manually set Z height so the pen just touches the paper.</p>
-          <p>3. Run the pattern and observe the result.</p>
-          <p>4. Adjust settings in the Settings tab if needed, then re-run.</p>
-          <p className="text-[#3b82f6]">All patterns are centered at X140 Y120 (canvas center on a 280×240mm bed with 40mm offset).</p>
+          <p>2. Mount your pen and set the Z height so the pen just touches the paper.</p>
+          <p>3. Run the pattern and compare with the &ldquo;good result&rdquo; notes.</p>
+          <p>4. Adjust the printer settings if needed, then re-run.</p>
+          <p className="text-ink font-medium pt-1">All patterns are centred at X140 Y120 (canvas centre on a 280 × 240 mm bed with 40 mm offset).</p>
         </div>
       </div>
     </div>

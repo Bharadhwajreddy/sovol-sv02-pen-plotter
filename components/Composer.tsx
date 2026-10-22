@@ -538,7 +538,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
 
         {(overX > 0 || overY > 0) && (
           <div className="flex items-start gap-2.5 px-5 py-2.5 border-b text-[12.5px]" role="status"
-            style={{ borderColor: "rgba(245,158,11,0.2)", background: "rgba(245,158,11,0.07)", color: "#fcd34d" }}>
+            style={{ borderColor: "rgba(196,140,38,0.25)", background: "var(--ui-warn-soft)", color: "var(--ui-warn)" }}>
             <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
             <span>
               The drawing area runs {[overX > 0 ? `${overX} mm past the right edge` : null, overY > 0 ? `${overY} mm past the bottom edge` : null].filter(Boolean).join(" and ")} of
@@ -587,7 +587,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
             {/* Drawing area indicator — draggable to reposition */}
             <div
               className="absolute cursor-move group"
-              style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height, zIndex: 10, outline: "1.5px dashed rgba(99,102,241,0.75)", outlineOffset: -1 }}
+              style={{ left: daPx.x, top: daPx.y, width: daPx.width, height: daPx.height, zIndex: 10, outline: "1.5px dashed rgba(47,58,140,0.7)", outlineOffset: -1 }}
               title="Drag to move the drawing"
               onMouseDown={(e) => {
                 e.preventDefault();
@@ -619,7 +619,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
               }}
             >
               <span className="absolute -top-px left-2 -translate-y-full px-1.5 py-0.5 rounded-t-md text-[10px] font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ background: "rgba(79,70,229,0.9)" }}>
+                style={{ background: "var(--ui-ink)" }}>
                 <Move size={10} className="inline -mt-0.5 mr-1" />drag to move
               </span>
             </div>
@@ -643,7 +643,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
               return (
                 <div
                   key={el.id}
-                  className={`absolute cursor-pointer select-none rounded-sm ${selectedTextId === el.id ? "ring-2 ring-indigo-400" : ""}`}
+                  className={`absolute cursor-pointer select-none rounded-sm ${selectedTextId === el.id ? "ring-2 ring-[var(--ui-ink-2)]" : ""}`}
                   style={{ left: el.x * pxPerMm, top: el.y * pxPerMm }}
                   onClick={() => { setSelectedTextId(el.id); setActiveTab("text"); }}
                 >
@@ -663,7 +663,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
             {stickerElements.map((el) => (
               <div
                 key={el.id}
-                className={`absolute cursor-move select-none rounded ${selectedStickerId === el.id ? "ring-2 ring-violet-400" : ""}`}
+                className={`absolute cursor-move select-none rounded ${selectedStickerId === el.id ? "ring-2 ring-[var(--ui-terra)]" : ""}`}
                 style={{
                   left: el.x * pxPerMm,
                   top: el.y * pxPerMm,
@@ -710,11 +710,11 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
           </div>
 
           {generating && (
-            <div className="absolute inset-0 grid place-items-center" style={{ background: "rgba(7,7,11,0.55)", backdropFilter: "blur(2px)" }} aria-live="polite">
+            <div className="absolute inset-0 grid place-items-center" style={{ background: "rgba(243,237,226,0.6)", backdropFilter: "blur(3px)" }} aria-live="polite">
               <div className="ui-panel px-5 py-4 flex items-center gap-3 ui-pop">
-                <Loader2 size={18} className="animate-spin text-violet-300" />
+                <Loader2 size={18} className="animate-spin text-ink" />
                 <div>
-                  <p className="text-sm font-semibold text-white">{imageFile ? "Processing image at full detail…" : "Generating G-code…"}</p>
+                  <p className="text-sm font-semibold text-tx">{imageFile ? "Processing image at full detail…" : "Generating G-code…"}</p>
                   <p className="ui-hint">Usually 5–15 seconds</p>
                 </div>
               </div>
@@ -722,7 +722,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
           )}
         </div>
 
-        <div className="px-5 py-3 border-t text-[12px] flex flex-wrap gap-x-5 gap-y-1" style={{ borderColor: "var(--ui-line)", color: "var(--ui-text-3)" }}>
+        <div className="px-5 py-3 border-t text-[12px] flex flex-wrap gap-x-5 gap-y-1" style={{ borderColor: "var(--ui-line)", color: "var(--ui-text-3)", background: "var(--ui-panel-2)" }}>
           <span className="inline-flex items-center gap-1.5"><Move size={12} />Drag the dashed box to move the drawing</span>
           <span className="inline-flex items-center gap-1.5"><Smile size={12} />Drag stickers to place them</span>
         </div>
@@ -731,11 +731,11 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
       {/* ── Controls panel ── */}
       <aside className="ui-panel overflow-hidden lg:sticky lg:top-24 min-w-0">
         {/* Primary action */}
-        <div className="ui-section flex flex-col gap-2.5" style={{ background: "rgba(0,0,0,0.2)" }}>
+        <div className="ui-section flex flex-col gap-2.5 ui-muted">
           <button
             onClick={generateGcode}
             disabled={generating}
-            className="ui-btn ui-btn-primary ui-btn-lg w-full"
+            className="ui-btn ui-btn-primary ui-btn-lg ui-shine w-full"
           >
             {generating ? <><Loader2 size={17} className="animate-spin" />{imageFile ? "Processing image…" : "Generating…"}</> : <><Download size={17} />Generate G-code</>}
           </button>
@@ -745,9 +745,9 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
             </button>
           )}
           {genError && (
-            <div role="alert" className="flex items-start gap-2 px-3 py-2.5 rounded-xl border text-[12.5px] text-red-200"
-              style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.25)" }}>
-              <AlertCircle size={14} className="flex-shrink-0 mt-0.5 text-red-400" />{genError}
+            <div role="alert" className="flex items-start gap-2 px-3 py-2.5 rounded-xl border text-[12.5px] text-errc"
+              style={{ background: "var(--ui-err-soft)", borderColor: "rgba(176,58,46,0.25)" }}>
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5 text-errc" />{genError}
             </div>
           )}
         </div>
@@ -786,10 +786,10 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
 
           <div className="mt-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[13px] font-semibold text-white/85">Image size</span>
+              <span className="text-[13.5px] font-semibold text-tx">Image size</span>
               <div className="flex items-center gap-2">
                 {imageScale !== 100 && (
-                  <button onClick={() => setImageScale(100)} className="text-[11px] font-semibold text-violet-300 hover:text-violet-200">Reset</button>
+                  <button onClick={() => setImageScale(100)} className="text-[11.5px] font-semibold text-ink hover:underline">Reset</button>
                 )}
                 <span className="ui-value">{imageScale}%</span>
               </div>
@@ -834,7 +834,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
                     className="ui-option !p-2.5 !gap-2.5 !items-center"
                   >
                     <BorderGlyph style={s} active={border.style === s} />
-                    <span className="text-[12px] font-semibold capitalize text-white/85 leading-tight">{s.replace(/-/g, " ")}</span>
+                    <span className="text-[12.5px] font-semibold capitalize text-tx leading-tight">{s.replace(/-/g, " ")}</span>
                   </button>
                 ))}
               </div>
@@ -857,7 +857,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
               </button>
               {textElements.map((el) => (
                 <div key={el.id}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer ${selectedTextId === el.id ? "border-indigo-400/50 bg-indigo-500/[0.07]" : "border-white/[0.07] bg-white/[0.02]"}`}
+                  className={`p-3 rounded-xl border transition-all cursor-pointer ${selectedTextId === el.id ? "border-[rgba(47,58,140,0.4)] bg-[var(--ui-ink-soft)]" : "border-[color:var(--ui-line)] bg-[var(--ui-panel)]"}`}
                   onClick={() => setSelectedTextId(el.id)}>
                   <input
                     value={el.text}
@@ -889,7 +889,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
                     </label>
                   </div>
                   <button onClick={(e) => { e.stopPropagation(); setTextElements((prev) => prev.filter((t) => t.id !== el.id)); }}
-                    className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium text-red-300/70 hover:text-red-300 transition-colors">
+                    className="mt-2.5 inline-flex items-center gap-1 text-[12px] font-medium text-errc/80 hover:text-errc transition-colors">
                     <Trash2 size={12} />Remove
                   </button>
                 </div>
@@ -910,7 +910,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
                     {getStickersByCategory(cat as StickerCategory).map((sticker) => (
                       <button key={sticker.id} onClick={() => addSticker(sticker)}
                         title={`Add ${sticker.name}`} aria-label={`Add ${sticker.name}`}
-                        className="aspect-square rounded-lg bg-white border border-transparent hover:border-violet-400 hover:scale-105 transition-all p-1.5 grid place-items-center">
+                        className="aspect-square rounded-xl bg-white border border-[color:var(--ui-line)] hover:border-[color:var(--ui-ink-2)] hover:-translate-y-0.5 hover:shadow-md transition-all p-1.5 grid place-items-center">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={sticker.path} alt="" className="w-full h-full object-contain" />
                       </button>
@@ -920,7 +920,7 @@ export default function Composer({ baseLayer, settings, imageFile, processParams
               ))}
               {stickerElements.length > 0 && (
                 <button onClick={() => { setStickerElements([]); setSelectedStickerId(null); }}
-                  className="ui-btn ui-btn-sm ui-btn-ghost self-start !text-red-300/80">
+                  className="ui-btn ui-btn-sm ui-btn-ghost self-start !text-errc">
                   <Trash2 size={12} />Remove all stickers ({stickerElements.length})
                 </button>
               )}
@@ -938,8 +938,8 @@ function MiniSlider({ label, unit, value, min, max, onChange }: { label: string;
   return (
     <label className="block">
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[12.5px] font-semibold text-white/80">{label}</span>
-        <span className="text-[12px] font-semibold text-violet-200 tabular-nums">{value} {unit}</span>
+        <span className="text-[13px] font-semibold text-tx">{label}</span>
+        <span className="text-[12.5px] font-semibold text-ink tabular-nums">{value} {unit}</span>
       </div>
       <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))}
         className="ui-range" style={{ ["--fill" as string]: `${((value - min) / (max - min)) * 100}%` }} aria-label={label} />
@@ -948,10 +948,10 @@ function MiniSlider({ label, unit, value, min, max, onChange }: { label: string;
 }
 
 function BorderGlyph({ style, active }: { style: BorderStyle; active: boolean }) {
-  const c = active ? "#c4b5fd" : "rgba(255,255,255,0.55)";
+  const c = active ? "var(--ui-ink)" : "var(--ui-text-3)";
   const common = { fill: "none", stroke: c, strokeWidth: 1.6, strokeLinecap: "round" as const };
   return (
-    <svg width="34" height="26" viewBox="0 0 34 26" className="flex-shrink-0 rounded-md" style={{ background: "rgba(0,0,0,0.3)" }} aria-hidden="true">
+    <svg width="34" height="26" viewBox="0 0 34 26" className="flex-shrink-0 rounded-md" style={{ background: active ? "var(--ui-ink-soft)" : "var(--ui-panel-2)" }} aria-hidden="true">
       {style === "none" && <path d="M10 18 L24 8" {...common} strokeDasharray="2 3" />}
       {style === "simple-rect" && <rect x="5" y="4" width="24" height="18" {...common} />}
       {style === "rounded-rect" && <rect x="5" y="4" width="24" height="18" rx="4" {...common} />}

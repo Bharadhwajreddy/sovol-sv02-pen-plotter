@@ -5,9 +5,10 @@ import {
   ImagePlus, Upload, Download, Loader2, AlertCircle, CheckCircle2, Check,
   Layers, Pen, LayoutGrid, Copy, ChevronDown, ChevronUp, RefreshCw, Trash2,
   Sparkles, FileCode2, FileImage, Ruler, Route, Timer, PenTool, Printer,
-  ArrowLeft, Wand2, SlidersHorizontal, RectangleVertical, RectangleHorizontal,
+  ArrowLeft, Wand2, SlidersHorizontal, RectangleVertical, RectangleHorizontal, Play, ZoomIn,
 } from "lucide-react";
-import GcodePreview, { parseGcode, formatDuration, formatDistance } from "@/components/GcodePreview";
+import GcodePreview, { GcodeInspector, parseGcode, formatDuration, formatDistance } from "@/components/GcodePreview";
+import HeroArt from "@/components/HeroArt";
 import { PROMPT_2MM, PROMPT_06MM } from "@/lib/prompts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -44,8 +45,8 @@ const PEN_OPTIONS: { id: PenType; label: string; desc: string; badge?: string }[
 
 const DRAWING_MODES: { id: DrawingMode; label: string; icon: React.ReactNode; desc: string; badge: string; badgeClass: string }[] = [
   { id: "single",  label: "Single",  icon: <Pen size={15} />,        desc: "One crisp line per feature",          badge: "Fastest",   badgeClass: "ui-badge-ok" },
-  { id: "multi",   label: "Multi",   icon: <Layers size={15} />,     desc: "Extra passes where lines are thicker", badge: "≈ 2× time", badgeClass: "ui-badge-blue" },
-  { id: "shading", label: "Shading", icon: <LayoutGrid size={15} />, desc: "Adds hatching in dark areas",          badge: "≈ 4× time", badgeClass: "ui-badge-warn" },
+  { id: "multi",   label: "Multi",   icon: <Layers size={15} />,     desc: "Extra passes where lines are thicker", badge: "≈ 2× time", badgeClass: "ui-badge-ink" },
+  { id: "shading", label: "Shading", icon: <LayoutGrid size={15} />, desc: "Adds hatching in dark areas",          badge: "≈ 4× time", badgeClass: "ui-badge-terra" },
 ];
 
 // ─── SVG direct passthrough (module-level) ───────────────────────────────────
@@ -314,6 +315,16 @@ const PROCESS_STEPS = [
   "Planning the pen path…",
 ];
 
+// Browser history: one URL per step so the back button walks back through the app
+const STEP_HASH = ["#/", "#/drawing", "#/layout", "#/export"];
+function stepFromHash(hash: string): number | null {
+  if (hash === "" || hash === "#" || hash === "#/") return 0;
+  if (hash === "#/drawing") return 1;
+  if (hash === "#/layout") return 2;
+  if (hash === "#/export") return 3;
+  return null; // another tab, or "#/convert" (= wherever you were)
+}
+
 // ─── Stepper ──────────────────────────────────────────────────────────────────
 const STEPS = ["Image", "Settings", "Layout", "Export"];
 
@@ -325,9 +336,10 @@ function Stepper({ current, onStep }: { current: number; onStep: (i: number) => 
         const clickable = i < current;
         return (
           <li key={label} className="flex items-center gap-1.5 flex-1 last:flex-none min-w-0">
-            <button type="button" className="ui-step" data-state={state} disabled={!clickable}
-              onClick={() => clickable && onStep(i)} aria-current={state === "current" ? "step" : undefined}>
-              <span className="ui-step-dot">{state === "done" ? <Check size={13} strokeWidth={3} /> : i + 1}</span>
+            <button type="button" className="ui-step border border-transparent" data-state={state} disabled={!clickable}
+              onClick={() => clickable && onStep(i)} aria-current={state === "current" ? "step" : undefined}
+              title={clickable ? `Back to ${label}` : undefined}>
+              <span className="ui-step-dot">{state === "done" ? <Check size={14} strokeWidth={3} /> : i + 1}</span>
               <span className="hidden sm:inline">{label}</span>
             </button>
             {i < STEPS.length - 1 && <span className="ui-step-line" data-done={i < current} />}
@@ -347,13 +359,13 @@ function Slider({ label, value, min, max, onChange, left, right, hint }: {
   return (
     <label className="block">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[13px] font-semibold text-white/85">{label}</span>
+        <span className="text-[13.5px] font-semibold text-tx">{label}</span>
         <span className="ui-value">{value}</span>
       </div>
       <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))}
         className="ui-range" style={{ ["--fill" as string]: `${fill}%` }} aria-label={label} />
       {(left || right) && (
-        <div className="flex justify-between mt-1 text-[11px]" style={{ color: "var(--ui-text-3)" }}>
+        <div className="flex justify-between mt-1 text-[11.5px] text-tx3">
           <span>{left}</span><span>{right}</span>
         </div>
       )}
@@ -380,39 +392,37 @@ function PromptPanel({ penType }: { penType: PenType }) {
   };
 
   return (
-    <section className="ui-panel overflow-hidden">
+    <section className="ui-panel overflow-hidden ui-rise ui-d4">
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
-        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-white/[0.02] transition-colors">
-        <div className="w-10 h-10 rounded-xl grid place-items-center flex-shrink-0"
-          style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.18), rgba(139,92,246,0.18))" }}>
-          <Sparkles size={17} className="text-amber-300" />
+        className="w-full flex items-center gap-4 px-5 sm:px-6 py-5 text-left hover:bg-[var(--ui-panel-2)] transition-colors">
+        <div className="w-11 h-11 rounded-2xl grid place-items-center flex-shrink-0" style={{ background: "var(--ui-gold-soft)", border: "1px solid rgba(167,125,60,0.25)" }}>
+          <Sparkles size={18} className="text-gold" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="ui-title">Starting from a photo? Turn it into a clean sketch first</p>
+          <p className="font-serif-display text-[17px] font-semibold text-tx">Starting from a photo? Make it a clean sketch first.</p>
           <p className="ui-hint mt-0.5">
-            Copy this ChatGPT prompt, attach your photo, then upload the sketch it returns.
-            {" "}Tuned for the {is2mm ? "2 mm marker (bold caricature)" : "0.6 mm fine liner (detailed portrait)"}.
+            Copy this ChatGPT prompt, attach your photo, then upload the sketch it returns —
+            {" "}tuned for the {is2mm ? "2 mm marker (bold caricature)" : "0.6 mm fine liner (detailed portrait)"}.
           </p>
         </div>
-        <ChevronDown size={18} className={`flex-shrink-0 text-white/40 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown size={18} className={`flex-shrink-0 text-tx3 transition-transform duration-300 ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
-        <div className="px-5 pb-5 ui-pop">
-          <div className="relative rounded-xl border" style={{ background: "rgba(0,0,0,0.35)", borderColor: "var(--ui-line)" }}>
+        <div className="px-5 sm:px-6 pb-6 ui-pop">
+          <div className="relative rounded-2xl border" style={{ background: "var(--ui-panel-2)", borderColor: "var(--ui-line)" }}>
             <button onClick={handleCopy}
-              className={`ui-btn ui-btn-sm absolute top-3 right-3 ${copied ? "!text-emerald-300 !border-emerald-500/30 !bg-emerald-500/10" : ""}`}>
+              className={`ui-btn ui-btn-sm absolute top-3 right-3 ${copied ? "!text-okc !border-[rgba(47,122,87,0.35)]" : ""}`}>
               {copied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
               {copied ? "Copied" : "Copy prompt"}
             </button>
-            <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words p-4 pr-36"
-              style={{ color: "rgba(255,255,255,0.55)" }}>
+            <pre className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words p-5 pr-36 text-tx2">
               {expanded ? prompt : lines.slice(0, 6).join("\n") + (lines.length > 6 ? "\n…" : "")}
             </pre>
           </div>
           {lines.length > 6 && (
-            <button onClick={() => setExpanded((v) => !v)} className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-violet-300 hover:text-violet-200">
-              {expanded ? <><ChevronUp size={13} />Show less</> : <><ChevronDown size={13} />Show the full prompt</>}
+            <button onClick={() => setExpanded((v) => !v)} className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-ink hover:underline underline-offset-4">
+              {expanded ? <><ChevronUp size={14} />Show less</> : <><ChevronDown size={14} />Show the full prompt</>}
             </button>
           )}
         </div>
@@ -427,7 +437,7 @@ function OrientationIcon({ o }: { o: Orientation }) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { settings?: PlotterSettings }) {
+export default function UploadConvert({ settings = DEFAULT_SETTINGS, active = true }: { settings?: PlotterSettings; active?: boolean }) {
   // ── Upload & mode state ──────────────────────────────────────────────────
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -605,6 +615,9 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   const [imgMeta, setImgMeta] = useState<{ w: number; h: number } | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [downloaded, setDownloaded] = useState(false);
+  const [playKey, setPlayKey] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [inspecting, setInspecting] = useState(false);
 
   useEffect(() => {
     if (!processing) { setStepIdx(0); return; }
@@ -612,15 +625,12 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
     return () => clearInterval(t);
   }, [processing]);
 
-  useEffect(() => { if (stage !== "download") setDownloaded(false); }, [stage, gcodeResult]);
+  useEffect(() => { if (stage !== "download") { setDownloaded(false); setPlaying(false); } }, [stage, gcodeResult]);
 
   const parsedGcode = useMemo(() => (gcodeResult ? parseGcode(gcodeResult.gcode) : null), [gcodeResult]);
+  const onPlayEnd = useCallback(() => setPlaying(false), []);
 
   const currentStep = stage === "download" ? 3 : stage === "composer" ? 2 : file ? 1 : 0;
-  const goToStep = (i: number) => {
-    if (i <= 1) setStage("upload");
-    else if (i === 2) setStage("composer");
-  };
 
   const resetAll = () => {
     setStage("upload"); setFile(null); setPreviewUrl(null); setGcodeResult(null);
@@ -628,11 +638,51 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const goToStep = (i: number) => {
+    if (i === 0) resetAll();
+    else if (i === 1) setStage("upload");
+    else if (i === 2) setStage("composer");
+  };
+
+  // ── Browser history: each step is its own entry, so Back walks back through the app ──
+  const firstSync = useRef(true);
+  useEffect(() => {
+    if (!active) return;
+    const desired = STEP_HASH[currentStep];
+    const cur = window.location.hash;
+    const curStep = stepFromHash(cur);
+    if (firstSync.current || cur === "#/convert") {
+      firstSync.current = false;
+      if (curStep !== currentStep) window.history.replaceState(null, "", desired);
+      return;
+    }
+    if (curStep !== currentStep) window.history.pushState(null, "", desired);
+  }, [currentStep, active]);
+
+  useEffect(() => {
+    const onPop = () => {
+      const t = stepFromHash(window.location.hash);
+      if (t === null || t === currentStep) return;
+      if (t < currentStep) {
+        if (t === 0) resetAll();
+        else if (t === 1) setStage("upload");
+        else setStage("composer");
+        window.scrollTo({ top: 0 });
+      } else {
+        const can = (t === 1 && !!file) || (t === 2 && !!(processResult || autoTraceSvg)) || (t === 3 && !!gcodeResult);
+        if (can) setStage(t === 3 ? "download" : t === 2 ? "composer" : "upload");
+        else window.history.replaceState(null, "", STEP_HASH[currentStep]);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }); // re-bind every render so the handler always sees the latest state
+
   const HEADINGS = [
-    { title: "Turn a sketch into plotter art", sub: "Upload a line drawing or sketch — every detail is traced into G-code for your Sovol SV02." },
-    { title: "Fine-tune the drawing", sub: "Choose your pen, style and detail level, then convert." },
-    { title: "Lay out the page", sub: "Position the drawing on the paper and add a border, text or stickers." },
-    { title: "Ready to plot", sub: "Check the toolpath preview — it's exactly what the pen will draw — then download." },
+    { title: <>Turn any sketch into a <em className="text-ink">hand‑plotted</em> drawing</>, sub: "Upload a line drawing or sketch. Every line is traced, solid areas are filled, and the pen path is planned for your Sovol SV02." },
+    { title: <>Fine‑tune the <em className="text-ink">drawing</em></>, sub: "Choose your pen, style and level of detail, then convert." },
+    { title: <>Lay out the <em className="text-ink">page</em></>, sub: "Position the drawing on the paper and add a border, text or stickers." },
+    { title: <>Ready to <em className="text-terra">plot</em></>, sub: "This preview is exactly what the pen will draw. Watch it plot, inspect the detail, then download." },
   ];
 
   const isSvgFile = !!file && (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg"));
@@ -642,29 +692,58 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col gap-6 sm:gap-8 w-full">
+    <div className="flex flex-col gap-7 sm:gap-9 w-full">
 
-      {/* ── Heading + progress ── */}
-      <div className="flex flex-col xl:flex-row xl:items-end gap-5 justify-between">
-        <div className="min-w-0" key={currentStep}>
-          <h2 className="ui-pop text-[26px] sm:text-[32px] leading-tight font-extrabold tracking-tight text-white">
-            {HEADINGS[currentStep].title}
-          </h2>
-          <p className="ui-pop mt-1.5 text-sm sm:text-[15px] max-w-2xl" style={{ color: "var(--ui-text-2)" }}>
-            {HEADINGS[currentStep].sub}
-          </p>
+      {/* ── Heading (+ hero art on the start page) ── */}
+      {currentStep === 0 ? (
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_auto] gap-8 lg:gap-14 items-center pt-2 sm:pt-4">
+          <div className="min-w-0">
+            <span className="ui-badge ui-badge-gold ui-rise">
+              <Sparkles size={12} /> Pen plotting, made beautiful
+            </span>
+            <h2 className="ui-rise ui-d1 mt-5 font-serif-display text-[38px] sm:text-[54px] lg:text-[62px] leading-[1.02] font-semibold text-tx max-w-3xl">
+              {HEADINGS[0].title}
+            </h2>
+            <p className="ui-rise ui-d2 mt-5 text-[15.5px] sm:text-[17px] leading-relaxed text-tx2 max-w-xl">
+              {HEADINGS[0].sub}
+            </p>
+            <div className="ui-rise ui-d3 mt-7 flex flex-wrap gap-x-6 gap-y-3">
+              {[
+                { icon: <PenTool size={15} />, t: "Solid fills for eyes & fine detail" },
+                { icon: <Route size={15} />, t: "Exact toolpath preview" },
+                { icon: <Timer size={15} />, t: "Time & ink estimates" },
+              ].map((f) => (
+                <span key={f.t} className="inline-flex items-center gap-2 text-[13.5px] font-medium text-tx2">
+                  <span className="w-7 h-7 rounded-full grid place-items-center text-ink" style={{ background: "var(--ui-ink-soft)" }}>{f.icon}</span>
+                  {f.t}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="hidden sm:flex justify-center lg:justify-end ui-rise ui-d2 pr-2">
+            <HeroArt />
+          </div>
         </div>
-        <div className="xl:w-[560px] flex-shrink-0">
-          <Stepper current={currentStep} onStep={goToStep} />
+      ) : (
+        <div className="flex flex-col xl:flex-row xl:items-end gap-5 justify-between">
+          <div className="min-w-0" key={currentStep}>
+            <h2 className="ui-pop font-serif-display text-[32px] sm:text-[42px] leading-[1.05] font-semibold text-tx">
+              {HEADINGS[currentStep].title}
+            </h2>
+            <p className="ui-pop mt-2 text-[15px] max-w-2xl text-tx2">{HEADINGS[currentStep].sub}</p>
+          </div>
+          <div className="xl:w-[560px] flex-shrink-0">
+            <Stepper current={currentStep} onStep={goToStep} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Stage: Upload & settings ── */}
       {stage === "upload" && (
         <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(340px,1fr)] gap-6 items-start">
 
           {/* Left: image */}
-          <div className="flex flex-col gap-4 min-w-0">
+          <div className="flex flex-col gap-4 min-w-0 ui-rise ui-d2">
             <div
               className={`ui-drop overflow-hidden ${previewUrl ? "" : "cursor-pointer"}`}
               data-drag={dragging}
@@ -686,20 +765,20 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
               />
 
               {!previewUrl ? (
-                <div className="flex flex-col items-center justify-center text-center px-6 py-14 sm:py-20 min-h-[340px] sm:min-h-[460px]">
-                  <div className="relative mb-6">
-                    <div className="absolute inset-0 rounded-3xl blur-2xl opacity-60" style={{ background: "linear-gradient(135deg,#8b5cf6,#3b82f6)" }} />
-                    <div className="relative w-20 h-20 rounded-3xl grid place-items-center border border-white/15"
-                      style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.9), rgba(79,70,229,0.9))" }}>
-                      <ImagePlus size={34} className="text-white" />
+                <div className="flex flex-col items-center justify-center text-center px-6 py-14 sm:py-16 min-h-[340px] sm:min-h-[440px]">
+                  <div className={`relative mb-6 transition-transform duration-300 ${dragging ? "scale-110 -rotate-3" : ""}`}>
+                    <div className="absolute -inset-3 rounded-[28px] opacity-70 blur-xl" style={{ background: "radial-gradient(closest-side, rgba(47,58,140,0.25), transparent)" }} />
+                    <div className="relative w-20 h-20 rounded-[24px] grid place-items-center"
+                      style={{ background: "linear-gradient(160deg, #3a46a3, #27307a)", boxShadow: "0 1px 0 rgba(255,255,255,0.25) inset, 0 18px 34px -14px rgba(47,58,140,0.7)" }}>
+                      <ImagePlus size={32} className="text-[#fdfaf3]" />
                     </div>
                   </div>
-                  <p className="text-xl font-bold text-white tracking-tight">{dragging ? "Drop it here" : "Drop your sketch here"}</p>
-                  <p className="mt-1.5 text-sm" style={{ color: "var(--ui-text-2)" }}>or</p>
-                  <span className="ui-btn ui-btn-primary mt-3 pointer-events-none">
-                    <Upload size={15} /> Choose an image
+                  <p className="font-serif-display text-[26px] font-semibold text-tx">{dragging ? "Drop it right here" : "Drop your sketch here"}</p>
+                  <p className="mt-1 text-[14px] text-tx3">or</p>
+                  <span className="ui-btn ui-btn-primary ui-btn-lg mt-3 pointer-events-none !h-12">
+                    <Upload size={16} /> Choose an image
                   </span>
-                  <p className="mt-4 text-xs" style={{ color: "var(--ui-text-3)" }}>JPEG · PNG · WEBP · SVG</p>
+                  <p className="mt-4 text-[12.5px] text-tx3 tracking-wide">JPEG · PNG · WEBP · SVG</p>
 
                   <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full max-w-xl text-left">
                     {[
@@ -707,9 +786,9 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
                       { t: "1000 px or larger", d: "More pixels, finer detail" },
                       { t: "Plain background", d: "No shadows or paper texture" },
                     ].map((tip) => (
-                      <div key={tip.t} className="rounded-xl px-3.5 py-3 border" style={{ borderColor: "var(--ui-line)", background: "rgba(0,0,0,0.25)" }}>
-                        <p className="text-[12.5px] font-semibold text-white/85 flex items-center gap-1.5"><Check size={13} className="text-emerald-400" />{tip.t}</p>
-                        <p className="text-[11.5px] mt-0.5" style={{ color: "var(--ui-text-3)" }}>{tip.d}</p>
+                      <div key={tip.t} className="rounded-2xl px-4 py-3 border bg-[var(--ui-panel)]" style={{ borderColor: "var(--ui-line)" }}>
+                        <p className="text-[13px] font-semibold text-tx flex items-center gap-1.5"><Check size={14} className="text-okc" />{tip.t}</p>
+                        <p className="text-[12px] mt-0.5 text-tx3">{tip.d}</p>
                       </div>
                     ))}
                   </div>
@@ -717,13 +796,13 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
               ) : (
                 <div className="flex flex-col">
                   {/* File bar */}
-                  <div className="flex items-center gap-3 px-4 sm:px-5 py-3.5 border-b" style={{ borderColor: "var(--ui-line)", background: "rgba(0,0,0,0.25)" }}>
-                    <div className="w-9 h-9 rounded-lg grid place-items-center flex-shrink-0" style={{ background: "var(--ui-accent-soft)" }}>
-                      <FileImage size={16} className="text-violet-300" />
+                  <div className="flex items-center gap-3 px-4 sm:px-5 py-3.5 border-b bg-[var(--ui-panel)]" style={{ borderColor: "var(--ui-line)" }}>
+                    <div className="w-10 h-10 rounded-xl grid place-items-center flex-shrink-0" style={{ background: "var(--ui-ink-soft)" }}>
+                      <FileImage size={17} className="text-ink" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-white truncate">{file?.name ?? "Image"}</p>
-                      <p className="text-[11.5px]" style={{ color: "var(--ui-text-3)" }}>
+                      <p className="text-[14px] font-semibold text-tx truncate">{file?.name ?? "Image"}</p>
+                      <p className="text-[12px] text-tx3">
                         {[imgMeta ? `${imgMeta.w} × ${imgMeta.h} px` : null, file ? formatBytes(file.size) : null, isSvgFile ? "Vector — traced exactly" : null].filter(Boolean).join(" · ")}
                       </p>
                     </div>
@@ -732,27 +811,27 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
                       <RefreshCw size={13} /><span className="hidden sm:inline">Replace</span>
                     </button>
                     <button type="button" className="ui-btn ui-btn-sm ui-btn-ghost" disabled={processing} aria-label="Remove image"
-                      onClick={(e) => { e.stopPropagation(); resetAll(); }}>
-                      <Trash2 size={14} />
+                      onClick={(e) => { e.stopPropagation(); goToStep(0); }}>
+                      <Trash2 size={15} />
                     </button>
                   </div>
 
                   {/* Preview */}
-                  <div className="ui-stage !rounded-none !border-0 p-4 sm:p-8 flex items-center justify-center min-h-[320px] sm:min-h-[480px]">
-                    <div className="ui-paper relative overflow-hidden p-2 sm:p-3 max-w-full">
+                  <div className="ui-stage !rounded-none !border-0 p-5 sm:p-9 flex items-center justify-center min-h-[320px] sm:min-h-[480px]">
+                    <div className="ui-paper relative overflow-hidden p-2.5 sm:p-3.5 max-w-full ui-pop">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={previewUrl} alt="Uploaded image preview"
                         onLoad={(e) => setImgMeta({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-                        className={`block max-h-[300px] sm:max-h-[520px] w-auto max-w-full object-contain transition-[filter] duration-300 ${processing ? "saturate-0 opacity-80" : ""}`} />
+                        className={`block max-h-[300px] sm:max-h-[520px] w-auto max-w-full object-contain transition-[filter,opacity] duration-500 ${processing ? "sepia-[.35] opacity-80" : ""}`} />
                       {processing && <div className="ui-scanline" />}
                     </div>
                   </div>
 
                   {processing && (
-                    <div className="flex items-center gap-3 px-5 py-3.5 border-t" style={{ borderColor: "var(--ui-line)", background: "rgba(139,92,246,0.08)" }} aria-live="polite">
-                      <Loader2 size={16} className="animate-spin text-violet-300 flex-shrink-0" />
-                      <p className="text-sm font-semibold text-white/90">{PROCESS_STEPS[stepIdx]}</p>
-                      <span className="ml-auto text-xs" style={{ color: "var(--ui-text-3)" }}>usually 5–15 s</span>
+                    <div className="flex items-center gap-3 px-5 py-3.5 border-t" style={{ borderColor: "var(--ui-line)", background: "var(--ui-ink-soft)" }} aria-live="polite">
+                      <Loader2 size={16} className="animate-spin text-ink flex-shrink-0" />
+                      <p key={stepIdx} className="text-[14px] font-semibold text-tx ui-fade">{PROCESS_STEPS[stepIdx]}</p>
+                      <span className="ml-auto text-[12px] text-tx3">usually 5–15 s</span>
                     </div>
                   )}
                 </div>
@@ -760,22 +839,22 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
             </div>
 
             {processError && (
-              <div role="alert" className="flex items-start gap-3 px-4 py-3.5 rounded-xl border"
-                style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.25)" }}>
-                <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-200">{processError}</p>
+              <div role="alert" className="flex items-start gap-3 px-4 py-3.5 rounded-2xl border ui-pop"
+                style={{ background: "var(--ui-err-soft)", borderColor: "rgba(176,58,46,0.25)" }}>
+                <AlertCircle size={16} className="text-errc flex-shrink-0 mt-0.5" />
+                <p className="text-[14px] text-errc">{processError}</p>
               </div>
             )}
           </div>
 
           {/* Right: settings */}
-          <aside className="ui-panel lg:sticky lg:top-24 overflow-hidden min-w-0">
+          <aside className="ui-panel lg:sticky lg:top-24 overflow-hidden min-w-0 ui-rise ui-d3">
             <div className="ui-panel-head">
               <div className="flex items-center gap-2.5">
-                <SlidersHorizontal size={16} className="text-violet-300" />
-                <span className="ui-title">Drawing settings</span>
+                <SlidersHorizontal size={16} className="text-ink" />
+                <span className="font-serif-display text-[18px] font-semibold text-tx">Drawing settings</span>
               </div>
-              {isSvgFile && <span className="ui-badge ui-badge-blue">SVG — used as-is</span>}
+              {isSvgFile && <span className="ui-badge ui-badge-ink">SVG — used as-is</span>}
             </div>
 
             <fieldset disabled={processing} className="contents">
@@ -789,10 +868,10 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
                       <span className="ui-radio" />
                       <span className="flex-1 min-w-0">
                         <span className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[13.5px] font-semibold text-white">{p.label}</span>
-                          {p.badge && <span className="ui-badge ui-badge-accent">{p.badge}</span>}
+                          <span className="text-[14px] font-semibold text-tx">{p.label}</span>
+                          {p.badge && <span className="ui-badge ui-badge-gold">{p.badge}</span>}
                         </span>
-                        <span className="block text-[12px] mt-0.5" style={{ color: "var(--ui-text-3)" }}>{p.desc}</span>
+                        <span className="block text-[12.5px] mt-0.5 text-tx3">{p.desc}</span>
                       </span>
                     </button>
                   ))}
@@ -806,13 +885,13 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
                   {DRAWING_MODES.map((m) => (
                     <button key={m.id} type="button" role="radio" aria-checked={drawingMode === m.id}
                       onClick={() => setDrawingMode(m.id)} className="ui-option !items-center">
-                      <span className={`w-8 h-8 rounded-lg grid place-items-center flex-shrink-0 ${drawingMode === m.id ? "text-violet-200" : "text-white/45"}`}
-                        style={{ background: drawingMode === m.id ? "rgba(139,92,246,0.22)" : "rgba(255,255,255,0.05)" }}>
+                      <span className={`w-9 h-9 rounded-xl grid place-items-center flex-shrink-0 transition-colors ${drawingMode === m.id ? "text-[#fdfaf3]" : "text-tx3"}`}
+                        style={{ background: drawingMode === m.id ? "var(--ui-ink)" : "var(--ui-panel-2)" }}>
                         {m.icon}
                       </span>
                       <span className="flex-1 min-w-0">
-                        <span className="block text-[13.5px] font-semibold text-white">{m.label}</span>
-                        <span className="block text-[12px]" style={{ color: "var(--ui-text-3)" }}>{m.desc}</span>
+                        <span className="block text-[14px] font-semibold text-tx">{m.label}</span>
+                        <span className="block text-[12.5px] text-tx3">{m.desc}</span>
                       </span>
                       <span className={`ui-badge ${m.badgeClass}`}>{m.badge}</span>
                     </button>
@@ -843,8 +922,8 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
             </fieldset>
 
             {/* Action */}
-            <div className="ui-section" style={{ background: "rgba(0,0,0,0.2)" }}>
-              <button onClick={processAiSketch} disabled={!file || processing} className="ui-btn ui-btn-primary ui-btn-lg w-full">
+            <div className="ui-section ui-muted">
+              <button onClick={processAiSketch} disabled={!file || processing} className="ui-btn ui-btn-primary ui-btn-lg ui-shine w-full">
                 {processing ? <><Loader2 size={17} className="animate-spin" />Converting…</> : <><Wand2 size={17} />Convert to G-code</>}
               </button>
               <p className="ui-hint text-center mt-2.5">
@@ -859,7 +938,7 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
 
       {/* ── Stage: Composer (kept mounted on the export step so "Edit layout" keeps your layout) ── */}
       {(stage === "composer" || stage === "download") && (
-        <div className={stage === "download" ? "hidden" : "ui-pop"}>
+        <div className={stage === "download" ? "hidden" : "ui-rise"}>
           <ComposerWrapper
             baseLayer={composerBaseLayer}
             settings={plotterSettings}
@@ -877,35 +956,44 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
 
       {/* ── Stage: Download ── */}
       {stage === "download" && gcodeResult && parsedGcode && (
-        <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,1fr)] gap-6 items-start ui-pop">
+        <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,1fr)] gap-6 items-start">
 
           {/* Toolpath preview */}
-          <section className="ui-panel overflow-hidden min-w-0">
-            <div className="ui-panel-head">
+          <section className="ui-panel overflow-hidden min-w-0 ui-rise ui-d1">
+            <div className="ui-panel-head flex-wrap">
               <div className="flex items-center gap-2.5">
-                <Route size={16} className="text-violet-300" />
-                <span className="ui-title">Toolpath preview</span>
+                <Route size={16} className="text-ink" />
+                <span className="font-serif-display text-[18px] font-semibold text-tx">Toolpath preview</span>
               </div>
-              <span className="ui-badge">What the pen will draw</span>
+              <div className="flex items-center gap-2">
+                <button type="button" className="ui-btn ui-btn-sm" disabled={playing}
+                  onClick={() => { setPlaying(true); setPlayKey((k) => k + 1); }}>
+                  {playing ? <><Loader2 size={13} className="animate-spin" />Plotting…</> : <><Play size={13} />Watch it plot</>}
+                </button>
+                <button type="button" className="ui-btn ui-btn-sm" onClick={() => setInspecting(true)}>
+                  <ZoomIn size={13} />Inspect
+                </button>
+              </div>
             </div>
-            <div className="ui-stage !rounded-none !border-0 p-4 sm:p-8">
-              <div className="ui-paper p-2 sm:p-3 max-w-[720px] mx-auto">
-                <GcodePreview parsed={parsedGcode} />
-              </div>
+            <div className="ui-stage !rounded-none !border-0 p-5 sm:p-9">
+              <button type="button" onClick={() => setInspecting(true)} className="block ui-paper p-2.5 sm:p-3.5 max-w-[720px] mx-auto w-full group" aria-label="Open the toolpath inspector">
+                <GcodePreview parsed={parsedGcode} playKey={playKey} onPlayEnd={onPlayEnd} />
+              </button>
+              <p className="text-center mt-3 text-[12px] text-tx3">Click the drawing to zoom into every stroke</p>
             </div>
           </section>
 
           {/* Summary & actions */}
-          <aside className="ui-panel overflow-hidden lg:sticky lg:top-24 min-w-0">
+          <aside className="ui-panel overflow-hidden lg:sticky lg:top-24 min-w-0 ui-rise ui-d2">
             <div className="ui-section flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl grid place-items-center flex-shrink-0"
-                style={{ background: "linear-gradient(135deg, rgba(16,185,129,0.25), rgba(14,165,233,0.2))", border: "1px solid rgba(16,185,129,0.35)" }}>
+                style={{ background: "var(--ui-ok-soft)", border: "1px solid rgba(47,122,87,0.3)" }}>
                 <svg className="ui-check" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M5 12.5l4.2 4.2L19 7" stroke="#6ee7b7" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5 12.5l4.2 4.2L19 7" stroke="var(--ui-ok)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
               <div className="min-w-0">
-                <p className="text-lg font-bold text-white tracking-tight">Your G-code is ready</p>
+                <p className="font-serif-display text-[21px] font-semibold text-tx">Your G-code is ready</p>
                 <p className="ui-hint">Generated for the Sovol SV02 · {orientation} paper</p>
               </div>
             </div>
@@ -916,29 +1004,29 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
                 { icon: <Timer size={14} />, label: "Est. plot time", value: `≈ ${formatDuration(parsedGcode.stats.seconds)}` },
                 { icon: <Ruler size={14} />, label: "Ink distance", value: formatDistance(parsedGcode.stats.drawMm) },
                 { icon: <FileCode2 size={14} />, label: "File size", value: formatBytes(parsedGcode.stats.bytes) },
-              ].map((s) => (
-                <div key={s.label} className="ui-stat">
-                  <div className="flex items-center gap-1.5 text-violet-300">{s.icon}<span className="ui-stat-label !mt-0">{s.label}</span></div>
+              ].map((s, i) => (
+                <div key={s.label} className={`ui-stat ui-rise ui-d${i + 2}`}>
+                  <div className="flex items-center gap-1.5 text-ink">{s.icon}<span className="ui-stat-label">{s.label}</span></div>
                   <p className="ui-stat-value mt-1.5">{s.value}</p>
                 </div>
               ))}
             </div>
 
             <div className="ui-section flex flex-col gap-2.5">
-              <button onClick={() => { handleDownload(); setDownloaded(true); }} className="ui-btn ui-btn-success ui-btn-lg w-full">
-                {downloaded ? <><CheckCircle2 size={18} />Download G-code again</> : <><Download size={18} />Download G-code</>}
+              <button onClick={() => { handleDownload(); setDownloaded(true); }} className="ui-btn ui-btn-terra ui-btn-lg ui-shine w-full">
+                {downloaded ? <><CheckCircle2 size={18} />Download again</> : <><Download size={18} />Download G-code</>}
               </button>
               <div className="grid grid-cols-2 gap-2.5">
                 <button onClick={() => setStage("composer")} className="ui-btn">
                   <ArrowLeft size={15} />Edit layout
                 </button>
-                <button onClick={resetAll} className="ui-btn">
+                <button onClick={() => goToStep(0)} className="ui-btn">
                   <RefreshCw size={14} />New drawing
                 </button>
               </div>
             </div>
 
-            <div className="ui-section">
+            <div className="ui-section ui-muted">
               <p className="ui-eyebrow mb-3 flex items-center gap-1.5"><Printer size={13} />Before you plot</p>
               <ol className="flex flex-col gap-2.5">
                 {[
@@ -947,9 +1035,8 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
                   "Lower the pen until it just touches the paper.",
                   "Start the print and watch the first few strokes.",
                 ].map((t, i) => (
-                  <li key={i} className="flex gap-3 text-[13px]" style={{ color: "var(--ui-text-2)" }}>
-                    <span className="w-5 h-5 rounded-full grid place-items-center text-[11px] font-bold flex-shrink-0 text-violet-200"
-                      style={{ background: "var(--ui-accent-soft)" }}>{i + 1}</span>
+                  <li key={i} className="flex gap-3 text-[13.5px] text-tx2">
+                    <span className="w-5 h-5 rounded-full grid place-items-center text-[11px] font-bold flex-shrink-0 text-ink" style={{ background: "var(--ui-ink-soft)" }}>{i + 1}</span>
                     {t}
                   </li>
                 ))}
@@ -958,6 +1045,8 @@ export default function UploadConvert({ settings = DEFAULT_SETTINGS }: { setting
           </aside>
         </div>
       )}
+
+      {inspecting && parsedGcode && <GcodeInspector parsed={parsedGcode} onClose={() => setInspecting(false)} />}
 
       {/* ── Rating modal ── */}
       {showRating && gcodeResult && (

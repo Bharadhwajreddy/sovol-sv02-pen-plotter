@@ -78,63 +78,62 @@ export default function SvgToGcode() {
   }, [svgText, zDraw, zHop, feedDraw, feedTravel]);
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-4xl mx-auto">
-      <div className="rounded-2xl border overflow-hidden" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-        <div className="px-5 py-4 border-b flex items-center gap-3" style={{ borderColor: "var(--border)" }}>
-          <FileCode2 size={16} className="text-purple-400" />
-          <span className="text-sm font-bold text-white">SVG → G-code</span>
-          <span className="text-xs ml-2" style={{ color: "var(--text-muted)" }}>Paste SVG paths with mm coordinates</span>
-        </div>
-        <div className="p-5 flex flex-col gap-4">
-          <textarea
-            value={svgText}
-            onChange={(e) => setSvgText(e.target.value)}
-            placeholder={'<svg xmlns="http://www.w3.org/2000/svg">\n  <path d="M 10,10 L 50,10 L 50,50 Z"/>\n</svg>'}
-            rows={10}
-            className="w-full px-3 py-2 rounded-xl border text-xs font-mono resize-y"
-            style={{ background: "rgba(0,0,0,0.3)", borderColor: "var(--border)", color: "rgba(255,255,255,0.7)" }}
-          />
+    <div className="flex flex-col gap-7 w-full max-w-4xl mx-auto">
+      <div>
+        <span className="ui-badge ui-badge-ink"><FileCode2 size={12} />Advanced</span>
+        <h2 className="mt-4 font-serif-display text-[34px] sm:text-[42px] leading-[1.05] font-semibold text-tx">SVG <em className="text-ink">→</em> G-code</h2>
+        <p className="mt-2 text-[15px] text-tx2 max-w-2xl">Paste SVG paths that already use millimetre coordinates and download plot-ready G-code — no tracing involved.</p>
+      </div>
+
+      <section className="ui-panel overflow-hidden">
+        <div className="ui-section flex flex-col gap-5">
+          <label className="ui-field">
+            <span>SVG markup</span>
+            <textarea
+              value={svgText}
+              onChange={(e) => setSvgText(e.target.value)}
+              placeholder={'<svg xmlns="http://www.w3.org/2000/svg">\n  <path d="M 10,10 L 50,10 L 50,50 Z"/>\n</svg>'}
+              rows={11}
+              className="ui-input font-mono !text-[12.5px] resize-y"
+            />
+          </label>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: "Z Draw (mm)", value: zDraw, set: setZDraw, step: 0.1 },
-              { label: "Z Hop (mm)", value: zHop, set: setZHop, step: 0.5 },
-              { label: "Feed Draw", value: feedDraw, set: setFeedDraw, step: 100 },
-              { label: "Feed Travel", value: feedTravel, set: setFeedTravel, step: 100 },
-            ].map(({ label, value, set, step }) => (
-              <label key={label} className="flex flex-col gap-1">
-                <span className="text-[10px] text-white/40">{label}</span>
+              { label: "Pen down (Z)", unit: "mm", value: zDraw, set: setZDraw, step: 0.1 },
+              { label: "Pen up (Z)", unit: "mm", value: zHop, set: setZHop, step: 0.5 },
+              { label: "Draw speed", unit: "mm/min", value: feedDraw, set: setFeedDraw, step: 100 },
+              { label: "Travel speed", unit: "mm/min", value: feedTravel, set: setFeedTravel, step: 100 },
+            ].map(({ label, unit, value, set, step }) => (
+              <label key={label} className="ui-field">
+                <span>{label}</span>
                 <input
                   type="number"
                   value={value}
                   step={step}
                   onChange={(e) => set(Number(e.target.value))}
-                  className="px-2 py-1.5 rounded-lg border text-xs text-white focus:outline-none focus:border-purple-500/50"
-                  style={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.10)" }}
+                  className={`ui-input ${unit.length > 3 ? "!pr-16" : ""}`}
                 />
+                <span className="ui-unit">{unit}</span>
               </label>
             ))}
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-xl border text-xs text-red-300"
-              style={{ background: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.2)" }}>
-              <AlertCircle size={13} />
+            <div role="alert" className="flex items-center gap-2 px-4 py-3 rounded-xl border text-[13px] text-errc"
+              style={{ background: "var(--ui-err-soft)", borderColor: "rgba(176,58,46,0.25)" }}>
+              <AlertCircle size={14} />
               {error}
             </div>
           )}
-
-          <button
-            onClick={generate}
-            disabled={!svgText.trim()}
-            className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-black text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40"
-            style={{ background: "linear-gradient(135deg,#7c3aed,#2563eb)" }}
-          >
-            <Download size={14} />
-            Convert & Download G-code
+        </div>
+        <div className="ui-section ui-muted">
+          <button onClick={generate} disabled={!svgText.trim()} className="ui-btn ui-btn-primary ui-btn-lg ui-shine w-full">
+            <Download size={16} />
+            Convert &amp; download G-code
           </button>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

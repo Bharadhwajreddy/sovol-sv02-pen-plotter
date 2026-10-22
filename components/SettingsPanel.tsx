@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Save, RotateCcw, ChevronDown, ChevronUp, CheckCircle2 } from "lucide-react";
+import { Save, RotateCcw, ChevronDown, CheckCircle2 } from "lucide-react";
 
 interface PlotterSettings {
   zDraw: number;
@@ -38,11 +38,8 @@ interface FieldProps {
 
 function Field({ label, value, onChange, unit, min, max, step = 0.1, hint }: FieldProps) {
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between">
-        <label className="text-sm text-gray-300">{label}</label>
-        <span className="text-xs text-[#6b7280]">{unit}</span>
-      </div>
+    <label className="ui-field">
+      <span>{label}</span>
       <input
         type="number"
         value={value}
@@ -50,10 +47,11 @@ function Field({ label, value, onChange, unit, min, max, step = 0.1, hint }: Fie
         max={max}
         step={step}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-full bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-[#3b82f6] transition-colors"
+        className={`ui-input font-mono ${unit.length > 3 ? "!pr-16" : ""}`}
       />
-      {hint && <p className="text-xs text-[#6b7280]">{hint}</p>}
-    </div>
+      <span className="ui-unit" style={{ bottom: hint ? "auto" : 12, top: hint ? 33 : "auto" }}>{unit}</span>
+      {hint && <span className="ui-hint !text-[12px]">{hint}</span>}
+    </label>
   );
 }
 
@@ -115,219 +113,122 @@ export default function SettingsPanel() {
 
   return (
     <div className="space-y-8">
-      {/* Settings form */}
-      <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#2a2a2a]">
-          <h2 className="font-semibold text-white">Printer Settings</h2>
-          <p className="text-xs text-[#6b7280] mt-0.5">
-            These values are used when generating G-code. Saved to your browser.
-          </p>
-        </div>
-
-        <div className="p-5 space-y-6">
-          {/* Z heights */}
-          <div>
-            <h3 className="text-xs font-medium text-[#6b7280] uppercase tracking-wider mb-3">
-              Z Heights
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field
-                label="Z_DRAW — Pen down height"
-                value={settings.zDraw}
-                onChange={update("zDraw")}
-                unit="mm"
-                min={-5}
-                max={10}
-                step={0.1}
-                hint="Height where pen touches paper. Start at 0.0 and adjust."
-              />
-              <Field
-                label="Z_HOP — Pen up height"
-                value={settings.zHop}
-                onChange={update("zHop")}
-                unit="mm"
-                min={0.5}
-                max={20}
-                step={0.5}
-                hint="Height pen lifts between strokes. Increase if pen drags."
-              />
-            </div>
-          </div>
-
-          {/* Feed rates */}
-          <div>
-            <h3 className="text-xs font-medium text-[#6b7280] uppercase tracking-wider mb-3">
-              Feed Rates
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field
-                label="Draw Feed Rate"
-                value={settings.feedDraw}
-                onChange={update("feedDraw")}
-                unit="mm/min"
-                min={100}
-                max={5000}
-                step={100}
-                hint="Speed while drawing. Lower = smoother arcs."
-              />
-              <Field
-                label="Travel Feed Rate"
-                value={settings.feedTravel}
-                onChange={update("feedTravel")}
-                unit="mm/min"
-                min={100}
-                max={10000}
-                step={100}
-                hint="Speed while moving between strokes."
-              />
-            </div>
-          </div>
-
-          {/* Canvas */}
-          <div>
-            <h3 className="text-xs font-medium text-[#6b7280] uppercase tracking-wider mb-3">
-              Drawing Area
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field
-                label="Canvas Width"
-                value={settings.canvasX}
-                onChange={update("canvasX")}
-                unit="mm"
-                min={10}
-                max={270}
-                step={1}
-                hint="Usable drawing width. Default 200mm."
-              />
-              <Field
-                label="Canvas Height"
-                value={settings.canvasY}
-                onChange={update("canvasY")}
-                unit="mm"
-                min={10}
-                max={230}
-                step={1}
-                hint="Usable drawing height. Default 160mm."
-              />
-              <Field
-                label="X Offset from home"
-                value={settings.offsetX}
-                onChange={update("offsetX")}
-                unit="mm"
-                min={0}
-                max={80}
-                step={1}
-                hint="Distance from X home to drawing start. Default 40mm."
-              />
-              <Field
-                label="Y Offset from home"
-                value={settings.offsetY}
-                onChange={update("offsetY")}
-                unit="mm"
-                min={0}
-                max={80}
-                step={1}
-                hint="Distance from Y home to drawing start. Default 40mm."
-              />
-            </div>
-          </div>
-
-          {/* Machine info */}
-          <div className="bg-[#0f0f0f] rounded-lg p-4 font-mono text-xs text-[#6b7280] space-y-1">
-            <p className="text-gray-400 font-medium mb-2">Current G-code header preview</p>
-            <p>G21 ; mm units</p>
-            <p>G90 ; absolute positioning</p>
-            <p>G28 X Y ; home X and Y ONLY</p>
-            <p>G0 Z{settings.zHop.toFixed(2)} F{settings.feedTravel} ; pen up</p>
-          </div>
-
-          {/* Buttons */}
-          <div className="flex gap-3">
-            <button
-              onClick={save}
-              className="flex items-center gap-2 px-4 py-2.5 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              {saved ? (
-                <>
-                  <CheckCircle2 size={14} />
-                  Saved
-                </>
-              ) : (
-                <>
-                  <Save size={14} />
-                  Save Settings
-                </>
-              )}
-            </button>
-            <button
-              onClick={reset}
-              className="flex items-center gap-2 px-4 py-2.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] border border-[#2a2a2a] text-gray-300 text-sm font-medium rounded-lg transition-colors"
-            >
-              <RotateCcw size={14} />
-              Reset to Defaults
-            </button>
-          </div>
-        </div>
+      <div>
+        <span className="ui-badge ui-badge-ink"><Save size={12} />Saved in this browser</span>
+        <h2 className="mt-4 font-serif-display text-[34px] sm:text-[42px] leading-[1.05] font-semibold text-tx">Printer <em className="text-ink">settings</em></h2>
+        <p className="mt-2 text-[15px] text-tx2 max-w-2xl">Pen heights, speeds and the drawing area of your Sovol SV02, plus a step-by-step calibration guide.</p>
       </div>
 
-      {/* Calibration wizard */}
-      <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#2a2a2a]">
-          <h2 className="font-semibold text-white">Calibration Wizard</h2>
-          <p className="text-xs text-[#6b7280] mt-0.5">
-            Follow these steps to set up your Sovol SV02 as a pen plotter.
-          </p>
-        </div>
-
-        <div className="divide-y divide-[#2a2a2a]">
-          {calibrationSteps.map((step, i) => (
-            <div key={i}>
-              <button
-                onClick={() => setOpenStep(openStep === i ? null : i)}
-                className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-[#0f0f0f] transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-[#3b82f6]/20 border border-[#3b82f6]/40 flex items-center justify-center text-xs font-mono text-[#3b82f6] shrink-0">
-                    {i + 1}
-                  </div>
-                  <span className="text-sm font-medium text-gray-200">{step.title}</span>
-                </div>
-                {openStep === i ? (
-                  <ChevronUp size={14} className="text-[#6b7280] shrink-0" />
-                ) : (
-                  <ChevronDown size={14} className="text-[#6b7280] shrink-0" />
-                )}
-              </button>
-              {openStep === i && (
-                <div className="px-5 pb-4 pl-14">
-                  <p className="text-sm text-[#9ca3af] leading-relaxed">{step.content}</p>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Machine reference */}
-      <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-5">
-        <h3 className="font-semibold text-white mb-3">Machine Reference</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-mono">
+      <div className="grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-6 items-start">
+        {/* Settings form */}
+        <section className="ui-panel overflow-hidden">
           {[
-            ["Printer", "Sovol SV02"],
-            ["Firmware", "Marlin"],
-            ["Board", "ATmega2560"],
-            ["Bed size", "280 × 240mm"],
-            ["Units", "G21 (mm)"],
-            ["Positioning", "G90 (absolute)"],
-            ["Home command", "G28 X Y"],
-            ["Never home", "Z axis"],
-            ["No commands", "M104/M109/M140"],
-          ].map(([k, v]) => (
-            <div key={k} className="bg-[#0f0f0f] rounded-lg p-2.5">
-              <p className="text-[#6b7280] text-xs mb-0.5">{k}</p>
-              <p className="text-gray-300">{v}</p>
+            { title: "Pen heights", fields: (
+              <>
+                <Field label="Pen down height (Z_DRAW)" value={settings.zDraw} onChange={update("zDraw")} unit="mm" min={-5} max={10} step={0.1} hint="Where the pen touches the paper. Start at 0.0 and adjust." />
+                <Field label="Pen up height (Z_HOP)" value={settings.zHop} onChange={update("zHop")} unit="mm" min={0.5} max={20} step={0.5} hint="How high the pen lifts between strokes. Increase if it drags." />
+              </>
+            ) },
+            { title: "Speeds", fields: (
+              <>
+                <Field label="Drawing speed" value={settings.feedDraw} onChange={update("feedDraw")} unit="mm/min" min={100} max={5000} step={100} hint="Lower is smoother on curves." />
+                <Field label="Travel speed" value={settings.feedTravel} onChange={update("feedTravel")} unit="mm/min" min={100} max={10000} step={100} hint="Speed while the pen is lifted." />
+              </>
+            ) },
+            { title: "Drawing area", fields: (
+              <>
+                <Field label="Canvas width" value={settings.canvasX} onChange={update("canvasX")} unit="mm" min={10} max={270} step={1} hint="Usable drawing width. Default 200 mm." />
+                <Field label="Canvas height" value={settings.canvasY} onChange={update("canvasY")} unit="mm" min={10} max={230} step={1} hint="Usable drawing height. Default 160 mm." />
+                <Field label="X offset from home" value={settings.offsetX} onChange={update("offsetX")} unit="mm" min={0} max={80} step={1} hint="Distance from X home to the drawing start." />
+                <Field label="Y offset from home" value={settings.offsetY} onChange={update("offsetY")} unit="mm" min={0} max={80} step={1} hint="Distance from Y home to the drawing start." />
+              </>
+            ) },
+          ].map((g) => (
+            <div key={g.title} className="ui-section">
+              <p className="ui-eyebrow mb-4">{g.title}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5">{g.fields}</div>
             </div>
           ))}
+
+          <div className="ui-section">
+            <div className="rounded-2xl p-4 font-mono text-[12px] space-y-1 text-tx2" style={{ background: "var(--ui-panel-2)", border: "1px solid var(--ui-line)" }}>
+              <p className="ui-eyebrow !font-sans mb-2">G-code header preview</p>
+              <p>G21 ; mm units</p>
+              <p>G90 ; absolute positioning</p>
+              <p>G28 X Y ; home X and Y ONLY</p>
+              <p>G0 Z{settings.zHop.toFixed(2)} F{settings.feedTravel} ; pen up</p>
+            </div>
+          </div>
+
+          <div className="ui-section ui-muted flex flex-wrap gap-3">
+            <button onClick={save} className={`ui-btn ui-btn-primary ui-shine ${saved ? "!bg-[var(--ui-ok)] !bg-none" : ""}`}>
+              {saved ? (<><CheckCircle2 size={15} />Saved</>) : (<><Save size={15} />Save settings</>)}
+            </button>
+            <button onClick={reset} className="ui-btn">
+              <RotateCcw size={14} />
+              Reset to defaults
+            </button>
+          </div>
+        </section>
+
+        <div className="flex flex-col gap-6">
+          {/* Calibration wizard */}
+          <section className="ui-panel overflow-hidden">
+            <div className="ui-panel-head">
+              <div>
+                <p className="font-serif-display text-[19px] font-semibold text-tx">Calibration guide</p>
+                <p className="ui-hint">Set up your Sovol SV02 as a pen plotter.</p>
+              </div>
+            </div>
+            <div>
+              {calibrationSteps.map((step, i) => (
+                <div key={i} className={i > 0 ? "border-t" : ""} style={{ borderColor: "var(--ui-line)" }}>
+                  <button
+                    onClick={() => setOpenStep(openStep === i ? null : i)}
+                    aria-expanded={openStep === i}
+                    className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-[var(--ui-panel-2)] transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={`w-7 h-7 rounded-full grid place-items-center text-[12px] font-bold shrink-0 transition-colors ${openStep === i ? "text-[#fdfaf3]" : "text-ink"}`}
+                        style={{ background: openStep === i ? "var(--ui-ink)" : "var(--ui-ink-soft)" }}>
+                        {i + 1}
+                      </span>
+                      <span className="text-[14px] font-semibold text-tx">{step.title}</span>
+                    </div>
+                    <ChevronDown size={16} className={`text-tx3 shrink-0 transition-transform duration-300 ${openStep === i ? "rotate-180" : ""}`} />
+                  </button>
+                  {openStep === i && (
+                    <div className="px-5 pb-5 pl-[60px] ui-pop">
+                      <p className="text-[13.5px] text-tx2 leading-relaxed">{step.content}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Machine reference */}
+          <section className="ui-panel p-5">
+            <p className="font-serif-display text-[19px] font-semibold text-tx mb-4">Machine reference</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-2.5 text-[12px]">
+              {[
+                ["Printer", "Sovol SV02"],
+                ["Firmware", "Marlin"],
+                ["Board", "ATmega2560"],
+                ["Bed size", "280 × 240 mm"],
+                ["Units", "G21 (mm)"],
+                ["Positioning", "G90 (absolute)"],
+                ["Home command", "G28 X Y"],
+                ["Never home", "Z axis"],
+                ["No commands", "M104/M109/M140"],
+              ].map(([k, v]) => (
+                <div key={k} className="rounded-xl p-3" style={{ background: "var(--ui-panel-2)" }}>
+                  <p className="text-tx3 mb-0.5">{k}</p>
+                  <p className="font-mono font-medium text-tx">{v}</p>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       </div>
     </div>

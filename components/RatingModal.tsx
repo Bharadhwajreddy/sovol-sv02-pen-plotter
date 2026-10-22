@@ -77,46 +77,36 @@ export default function RatingModal({ sessionMeta, onSubmit, onSkip }: RatingMod
 
   return (
     // Non-blocking overlay — fixed position, pointer-events only on the card
-    <div className="fixed bottom-6 right-6 z-50 pointer-events-none">
+    <div className="fixed bottom-6 right-6 left-6 sm:left-auto z-50 pointer-events-none">
       <div
-        className="pointer-events-auto w-80 rounded-2xl border border-white/[0.10] bg-[#161616] shadow-2xl shadow-black/60 animate-fade-in"
+        className="pointer-events-auto sm:w-[340px] ui-panel !shadow-[var(--ui-shadow-lg)] ui-pop"
         role="dialog"
         aria-label="Rate your G-code output"
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
+        <div className="ui-panel-head !py-4">
           <div>
-            <p className="text-sm font-bold text-white">How did it plot?</p>
-            <p className="text-xs text-white/40 mt-0.5">Rate the output quality</p>
+            <p className="font-serif-display text-[18px] font-semibold text-tx">How did it plot?</p>
+            <p className="ui-hint">Your rating helps tune the drawing quality</p>
           </div>
-          <button
-            onClick={handleSkip}
-            className="p-1.5 rounded-lg text-white/30 hover:text-white/70 hover:bg-white/[0.06] transition-all"
-            aria-label="Skip rating"
-          >
-            <X size={14} />
+          <button onClick={handleSkip} className="ui-btn ui-btn-sm ui-btn-ghost !px-2" aria-label="Skip rating">
+            <X size={15} />
           </button>
         </div>
 
         {/* Body */}
         <div className="px-5 py-4">
           {submitted ? (
-            // Confirmation message
-            <div className="flex flex-col items-center gap-2 py-2">
-              <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center">
-                <Star size={18} className="text-green-400 fill-green-400" />
+            <div className="flex flex-col items-center gap-2 py-2 ui-pop">
+              <div className="w-11 h-11 rounded-full grid place-items-center" style={{ background: "var(--ui-gold-soft)" }}>
+                <Star size={19} className="text-gold fill-[var(--ui-gold)]" />
               </div>
-              <p className="text-sm font-semibold text-white">Thanks for the feedback!</p>
-              <p className="text-xs text-white/40">Your rating has been saved.</p>
+              <p className="text-[14px] font-semibold text-tx">Thank you!</p>
+              <p className="ui-hint">Your rating has been saved.</p>
             </div>
           ) : (
             <>
-              {/* Star rating */}
-              <div
-                className="flex items-center justify-center gap-2 py-2"
-                role="group"
-                aria-label="Star rating"
-              >
+              <div className="flex items-center justify-center gap-1.5 py-1" role="group" aria-label="Star rating">
                 {[1, 2, 3, 4, 5].map((star) => {
                   const isActive = star <= (hovered || selected);
                   return (
@@ -127,50 +117,30 @@ export default function RatingModal({ sessionMeta, onSubmit, onSkip }: RatingMod
                       onClick={() => setSelected(star)}
                       aria-label={`${star} star${star !== 1 ? "s" : ""}`}
                       aria-pressed={selected === star}
-                      className="transition-transform hover:scale-110 focus:outline-none focus:scale-110"
+                      className="p-1 transition-transform hover:scale-115 hover:-translate-y-0.5"
                     >
-                      <Star
-                        size={28}
-                        className={`transition-colors ${
-                          isActive
-                            ? "text-yellow-400 fill-yellow-400"
-                            : "text-white/20"
-                        }`}
-                      />
+                      <Star size={30} strokeWidth={1.6}
+                        className={`transition-colors ${isActive ? "text-gold fill-[var(--ui-gold)]" : "text-[color:var(--ui-line-strong)]"}`} />
                     </button>
                   );
                 })}
               </div>
 
-              {/* Error message */}
               {error && (
-                <div className="mt-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex items-center gap-2">
+                <div className="mt-2 px-3 py-2 rounded-xl border text-[12.5px] text-errc flex items-center gap-2"
+                  style={{ background: "var(--ui-err-soft)", borderColor: "rgba(176,58,46,0.25)" }}>
                   <span className="flex-1">{error}</span>
-                  <button
-                    onClick={handleSubmit}
-                    className="flex items-center gap-1 text-red-400 hover:text-red-300 transition-colors"
-                    aria-label="Retry submission"
-                  >
+                  <button onClick={handleSubmit} className="inline-flex items-center gap-1 font-semibold hover:underline" aria-label="Retry submission">
                     <RotateCcw size={11} />
                     Retry
                   </button>
                 </div>
               )}
 
-              {/* Actions */}
               <div className="flex items-center gap-2 mt-3">
-                <button
-                  onClick={handleSkip}
-                  className="flex-1 py-2 rounded-xl text-xs font-semibold text-white/40 hover:text-white/70 border border-white/[0.08] hover:border-white/[0.16] bg-white/[0.02] hover:bg-white/[0.06] transition-all"
-                >
-                  Skip
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={selected === 0 || submitting}
-                  className="flex-1 py-2 rounded-xl text-xs font-black text-white bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-purple-500/20"
-                >
-                  {submitting ? "Saving…" : "Submit Rating"}
+                <button onClick={handleSkip} className="ui-btn ui-btn-sm flex-1">Skip</button>
+                <button onClick={handleSubmit} disabled={selected === 0 || submitting} className="ui-btn ui-btn-sm ui-btn-primary flex-1">
+                  {submitting ? "Saving…" : "Submit rating"}
                 </button>
               </div>
             </>
